@@ -10,45 +10,60 @@ import mymesh
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.spatial.transform import Rotation as R
-
+import shapely
+import shapely.geometry as geom
+from shapely.geometry import MultiPoint
 from scipy.interpolate import interp1d
 import copy
 
-#  leave functions maybe need them later to find moving direction
-def calc_parabola_vertex(x1, y1, x2, y2, x3, y3):
-	
 
-		denom = (x1-x2) * (x1-x3) * (x2-x3);
-		A     = (x3 * (y2-y1) + x2 * (y1-y3) + x1 * (y3-y2)) / denom;
-		B     = (x3*x3 * (y1-y2) + x2*x2 * (y3-y1) + x1*x1 * (y2-y3)) / denom;
-		C     = (x2 * x3 * (x2-x3) * y1+x3 * x1 * (x3-x1) * y2+x1 * x2 * (x1-x2) * y3) / denom;
 
-		return A,B,C
+def project_to_surface(point,surface):
+        point=geom.Point(point[0],point[1])
+        projected_point=surface.interpolate(surface.project(point))
+        
+        return projected_point
+
+
+def convert_to_numpy(point):
+    x,y=point.coords.xy
+    return np.array([x[0],y[0]])
+
+# #  leave functions maybe need them later to find moving direction
+# def calc_parabola_vertex(x1, y1, x2, y2, x3, y3):
+# 	
+
+# 		denom = (x1-x2) * (x1-x3) * (x2-x3);
+# 		A     = (x3 * (y2-y1) + x2 * (y1-y3) + x1 * (y3-y2)) / denom;
+# 		B     = (x3*x3 * (y1-y2) + x2*x2 * (y3-y1) + x1*x1 * (y2-y3)) / denom;
+# 		C     = (x2 * x3 * (x2-x3) * y1+x3 * x1 * (x3-x1) * y2+x1 * x2 * (x1-x2) * y3) / denom;
+
+# 		return A,B,C
   
-def parabola(a, b, c): 
-    print ("Vertex: (" , (-b / (2 * a)) , ", "
-        ,(((4 * a * c) - (b * b)) / (4 * a)) , ")" ) 
+# def parabola(a, b, c): 
+#     print ("Vertex: (" , (-b / (2 * a)) , ", "
+#         ,(((4 * a * c) - (b * b)) / (4 * a)) , ")" ) 
           
-    print ("Focus: (" , (-b / (2 * a)) , ", "
-        , (((4 * a * c) - (b * b) + 1) / (4 * a)) , ")" ) 
+#     print ("Focus: (" , (-b / (2 * a)) , ", "
+#         , (((4 * a * c) - (b * b) + 1) / (4 * a)) , ")" ) 
       
-    print ("Directrix: y="
-            , (int)(c - ((b * b) + 1) * 4 * a ))     
+#     print ("Directrix: y="
+#             , (int)(c - ((b * b) + 1) * 4 * a ))     
       
       
 
-def rotate(origin, point, angle):
-    """
-    Rotate a point counterclockwise by a given angle around a given origin.
+# def rotate(origin, point, angle):
+#     """
+#     Rotate a point counterclockwise by a given angle around a given origin.
 
-    The angle should be given in radians.
-    """
-    ox, oy , oz= origin
-    px, py , pz= point
+#     The angle should be given in radians.
+#     """
+#     ox, oy , oz= origin
+#     px, py , pz= point
 
-    qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
-    qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
-    return np.array([qx, qy, pz])
+#     qx = ox + math.cos(angle) * (px - ox) - math.sin(angle) * (py - oy)
+#     qy = oy + math.sin(angle) * (px - ox) + math.cos(angle) * (py - oy)
+#     return np.array([qx, qy, pz])
 
 # def translate_to_normal_direction(vertices,tol):
 #     new_points=[]
@@ -124,40 +139,35 @@ if __name__=="__main__":
     plt.savefig('meshes/animations/shockwave/shockwave{:02}'.format(i))
     
     for j in range(154):
+        interface_curve=geom.LineString(mesh.points[mesh.interface_vertices])
         i+=1
         plt.clf()
 
         
-     
+
+        # Move vertices of the interface diagonally, except for vertices that belong both the interface and the boundary.
+        # These point are move along the boundary and reprojected to the parabola 
         for vertex in mesh.interface_vertices:
-            old_point=mesh.points[vertex]
-            x_new=old_point[0]+np.sin(np.pi/4)*1e-2
-            y_new=old_point[1]+np.cos(np.pi/4)*1e-2
-            new_point=np.array([x_new,y_new,0])
-            mesh.points[vertex]=new_point
+            if vertex not in mesh.boundary_vertices:
+                old_point=mesh.points[vertex]
+                x_new=old_point[0]+np.sin(np.pi/4)*1e-2
+                y_new=old_point[1]+np.cos(np.pi/4)*1e-2
+                new_point=np.array([x_new,y_new,0])
+                mesh.points[vertex]=new_point
+            elif mesh.points[vertex][0]==-1 :
+                mesh.points[vertex][1]+=1e-2
+                projected_point=project_to_surface(mesh.points[7][:2], interface_curve)
+                mesh.points[vertex][:2]=convert_to_numpy(projected_point)
+                mesh.points[vertex][0]=-1
+            elif mesh.points[vertex][1]==-1:
+                mesh.points[vertex][0]+=1e-2
+                projected_point=project_to_surface(mesh.points[8][:2], interface_curve)
+                mesh.points[vertex][:2]=convert_to_numpy(projected_point)
+                mesh.points[vertex][1]=-1
+
         elements=mesh.get_elements()
         
-        # vertices 7 and 8 area part of the interface and the boundary as well. After moving them for the first time,
-        # I delete them from boundary vertices list and then add the elements that are formed by connecting them to their
-        # adajacnet edges        
-        if i==1:
-
-            point1=copy.deepcopy(mesh.points[7])
-            point2=copy.deepcopy(mesh.points[8])
-            neighbor_objects=mesh.get_neighbourhood([7,8])
-            neighbor_elements=mesh.get_elements()[neighbor_objects]
-                                    
-            new_points=[point1,point2]
-            mesh.points=np.append(mesh.points,new_points,axis=0)
-            new_elements=[[29,7,28],[8,10,11]]
-            mesh.boundary_vertices = np.delete(mesh.boundary_vertices, np.argwhere(mesh.boundary_vertices == 7))
-            mesh.boundary_vertices = np.delete(mesh.boundary_vertices, np.argwhere(mesh.boundary_vertices == 8))
-                      
-            element_list=elements.tolist()
-            elements=np.array(element_list)
-            elements=np.append(elements,new_elements,axis=0)
-            mesh.set_triangles(elements)
-    
+         
         # Get all edges that are close up to a precribed distance from the interface
         mesh.interface_edges,mesh.target_edgelength_inteface,mesh.target_edgelength=get_edges_close_to_interface(3e-1)
                     
@@ -173,15 +183,14 @@ if __name__=="__main__":
         # mesh.coarsen()
         mesh.reconnect()
         mesh.smooth()
-        mesh.smooth_boundary()
-        mesh.smooth_interface()
- 
-
-
+        for vertex in mesh.boundary_vertices:
+            if vertex not in mesh.interface_vertices:
+                mesh.smooth_boundary_vertex(vertex)
+        for vertex in mesh.interface_vertices:
+            if vertex not in mesh.boundary_vertices:
+                mesh.smooth_interface_vertex(vertex)
         
-       
-     
-    
+   
         
         mesh.plot_quality(True)
 
