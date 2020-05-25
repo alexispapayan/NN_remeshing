@@ -99,6 +99,7 @@ So what we can do is connect vertices with the inner point and see if they inter
 
 """
 
+@torch.no_grad()
 def retriangulate_with_interior(contour, *args):
     try:
         net = get_connectivity_network(contour.shape[0], len(args))
@@ -117,10 +118,10 @@ def retriangulate_with_interior(contour, *args):
     #     pickle.dump(input, file)
     table = net(input)
 
-    table = table[0].detach().numpy().reshape([contour.shape[0], contour.shape[0]+len(args)])
-    
+    table = table[0].numpy().reshape([contour.shape[0], contour.shape[0]+len(args)])
+
     # table,_=quality_matrix(procrustes,inner)
-    
+
     ordered_matrix = order_quality_matrix(table, procrustes, np.concatenate([procrustes, inner], axis=0))
     new_elements, sub_elements = triangulate(procrustes, inner, ordered_matrix, recursive=True)
     # print(new_elements, sub_elements)

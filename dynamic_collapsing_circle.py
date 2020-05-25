@@ -24,8 +24,8 @@ def distance_from_boundary_box(vertex):
 def distance_from_interface(vertex):
     interface_vertices_coords=mesh.points[mesh.interface_vertices][:,:2]
     vertex_coords=mesh.points[vertex][:2]
-    
-    
+
+
     distances=np.array([np.linalg.norm(i-vertex_coords,2) for i in interface_vertices_coords])
     return np.min(distances)
 
@@ -44,21 +44,21 @@ def get_interface_target_edge_length_edges(interface_target_edge_length_vertices
   for vertex in interface_target_edge_length_vertices:
           objects=mesh.get_neighbourhood(vertex)
           neighbor_elements=mesh.get_elements()[objects]
-          
+
           neighbor_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in neighbor_elements]
           neighbor_edges=[edge for edge in neighbor_edges if edge[0] in interface_target_edge_length_vertices or edge[0] in mesh.interface_vertices  \
                         and edge[1] in interface_target_edge_length_vertices or edge[1] in mesh.interface_vertices]
           for edge in neighbor_edges:
               interface_edges.append(edge)
-        
-  interface_edges=np.array(interface_edges) 
+
+  interface_edges=np.array(interface_edges)
   interface_edges = np.unique(interface_edges, axis=0)
   return interface_edges
 
 
 mesh = mymesh.read('meshes/circle_inside_square.vtk')
-mesh.cells[0] = mesh.cells[0]._replace(data=np.array([[0],[1],[2],[3]], dtype=np.int))
-mesh.write('meshes/circle_inside_square.vtk')
+# mesh.cells[0] = mesh.cells[0]._replace(data=np.array([[0],[1],[2],[3]], dtype=np.int))
+# mesh.write('meshes/circle_inside_square.vtk')
 
 
 plt.ion()
@@ -73,9 +73,10 @@ mesh.plot_quality(True)
 
 plt.draw()
 i=0
-plt.savefig('meshes/animations/collapsing_circle/collapsing_circle{:02}'.format(i))
+# plt.savefig('meshes/animations/collapsing_circle/collapsing_circle{:02}'.format(i))
 radius=0.5
-for j in range(440):
+# for j in range(20):
+while input() == '':
     i += 1
     plt.clf()
     center=np.array([0.0,0.0,0])
@@ -85,45 +86,45 @@ for j in range(440):
         distance=np.linalg.norm(mesh.points[vertex]-center)
         if distance<radius:
             interior_interface_vertices.append(vertex)
-    interior_interface_vertices=np.array(interior_interface_vertices)       
-    
+    interior_interface_vertices=np.array(interior_interface_vertices)
+
     translatable_vertices=np.append(mesh.interface_vertices,interior_interface_vertices)
 
-    
-    
-    
+
+
+
     # for vertex in translatable_vertices:
     #       mesh.translate_vertex_towards_center(vertex,center,epsilon=5e-3,check_injectivity=False)
-    
- 
-    
+
+
+
     for vertex in mesh.interface_vertices:
-        mesh.translate_vertex(vertex, -mesh.points[vertex]*0.005, False)
+        mesh.translate_vertex(vertex, -mesh.points[vertex]*0.05, False)
 
 
- 
-    
+
+
     # interface_edges=[]
     # for k in translatable_vertices:
     #       objects=mesh.get_neighbourhood(k)
     #       neighbor_elements=mesh.get_elements()[objects]
-          
+
     #       neighbor_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in neighbor_elements]
     #       for edge in neighbor_edges:
     #           interface_edges.append(edge)
-    # interface_edges=np.array(interface_edges) 
+    # interface_edges=np.array(interface_edges)
     # interface_edges = np.unique(interface_edges, axis=0)
-    
-    
+
+
     interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
     interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
-    
+
     length = np.linalg.norm(mesh.points[interface_edges[:,0]] - mesh.points[interface_edges[:,1]], axis=1)
     target_edgelength_interface = np.mean(length)
     print("TARGET EDGE LENGTH INTERFACE:",target_edgelength_interface)
     mesh.interface_edges=interface_edges
     mesh.target_edgelength_inteface=target_edgelength_interface
-    
+
     elements = mesh.get_triangles()
     all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
     edges=np.unique(all_edges, axis=0)
@@ -134,63 +135,63 @@ for j in range(440):
     print("TARGET EDGE LENGTH ",target_edgelength)
 
     mesh.refine()
-    mesh.coarsen()   
-    
+    mesh.coarsen()
+
     interior_interface_vertices=[]
     for vertex in mesh.interior_vertices:
         distance=np.linalg.norm(mesh.points[vertex]-center)
         if distance<radius:
             interior_interface_vertices.append(vertex)
-    interior_interface_vertices=np.array(interior_interface_vertices)       
-    
-    translatable_vertices=np.append(mesh.interface_vertices,interior_interface_vertices)
-    
-    # interface_edges=[]
-    # for k in translatable_vertices:
-    #     objects=mesh.get_neighbourhood(k)
-    #     neighbor_elements=mesh.get_elements()[objects]
-       
-    #     neighbor_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in neighbor_elements]
-    #     for edge in neighbor_edges:
-    #         interface_edges.append(edge)
-           
-    # interface_edges=np.array(interface_edges) 
-    # interface_edges = np.unique(interface_edges, axis=0)
-    
-    interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
-    interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
-    
-    mesh.interface_edges=interface_edges
-    
-    
+    interior_interface_vertices=np.array(interior_interface_vertices)
 
-    mesh.refine_interface(target_edgelength_interface)
-    
-    
+    translatable_vertices=np.append(mesh.interface_vertices,interior_interface_vertices)
+
     # interface_edges=[]
     # for k in translatable_vertices:
     #     objects=mesh.get_neighbourhood(k)
     #     neighbor_elements=mesh.get_elements()[objects]
-       
+
     #     neighbor_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in neighbor_elements]
     #     for edge in neighbor_edges:
     #         interface_edges.append(edge)
-           
-    # interface_edges=np.array(interface_edges) 
+
+    # interface_edges=np.array(interface_edges)
     # interface_edges = np.unique(interface_edges, axis=0)
-    
+
     interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
     interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
-    
+
     mesh.interface_edges=interface_edges
-    
-    
-    
+
+
+
+    # mesh.refine_interface(target_edgelength_interface)
+
+
+    # interface_edges=[]
+    # for k in translatable_vertices:
+    #     objects=mesh.get_neighbourhood(k)
+    #     neighbor_elements=mesh.get_elements()[objects]
+
+    #     neighbor_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in neighbor_elements]
+    #     for edge in neighbor_edges:
+    #         interface_edges.append(edge)
+
+    # interface_edges=np.array(interface_edges)
+    # interface_edges = np.unique(interface_edges, axis=0)
+
+    interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
+    interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
+
     mesh.interface_edges=interface_edges
-    
-    
-    
-    # mesh.coarsen_interface(target_edgelength_interface)   
+
+
+
+    mesh.interface_edges=interface_edges
+
+
+
+    # mesh.coarsen_interface(target_edgelength_interface)
     mesh.reconnect()
     mesh.smooth_boundary()
     mesh.smooth_interface()
@@ -200,4 +201,4 @@ for j in range(440):
     #radius=0.5
     mesh.plot_quality(True)
     plt.draw()
-    plt.savefig('meshes/animations/collapsing_circle/collapsing_circle{:02}'.format(i))
+    # plt.savefig('meshes/animations/collapsing_circle/collapsing_circle{:02}'.format(i))

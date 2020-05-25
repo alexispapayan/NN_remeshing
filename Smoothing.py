@@ -6,6 +6,7 @@ from Triangulation import apply_procrustes
 from Neural_network import get_smoothing_network, get_boundary_network, get_interface_network
 # from matplotlib import pyplot as plt
 
+@torch.no_grad()
 def smooth_interior_point(contour):
     net = get_smoothing_network(contour.shape[0])
     procrustes_transform, inverse_transform, _ = get_procrustes_transform(contour)
@@ -14,8 +15,9 @@ def smooth_interior_point(contour):
     shape = np.asarray(shape, dtype=np.float32)
     input = torch.from_numpy(shape)
     prediction = net(input[None,:])[0]
-    return inverse_transform(prediction.detach().numpy())
+    return inverse_transform(prediction.numpy())
 
+@torch.no_grad()
 def smooth_boundary_point(contour, tangents):
     net = get_boundary_network(contour.shape[0]-1)
     procrustes_transform, inverse_transform, tangent_transform = get_procrustes_transform(contour)
@@ -25,8 +27,9 @@ def smooth_boundary_point(contour, tangents):
     input = torch.from_numpy(shape)
     prediction = net(input[None,:])[0]
 
-    return inverse_transform(prediction.detach().numpy())
+    return inverse_transform(prediction.numpy())
 
+@torch.no_grad()
 def smooth_interface_point(contour, points, tangents):
     net = get_interface_network(contour.shape[0])
     procrustes_transform, inverse_transform, tangent_transform = get_procrustes_transform(contour)
@@ -36,8 +39,9 @@ def smooth_interface_point(contour, points, tangents):
     shape = np.asarray(shape, dtype=np.float32)
     input = torch.from_numpy(shape)
     prediction = net(input[None,:])[0]
-    return inverse_transform(prediction.detach().numpy())
+    return inverse_transform(prediction.numpy())
 
+@torch.no_grad()
 def smooth_points(contour, net, n_interior, nb_of_grid_points=20, target_edge_length=1):
     procrustes, inverse_transform, _ = apply_procrustes(contour, full_output=True)
 

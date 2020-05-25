@@ -92,7 +92,7 @@ def simple_retriangulate(contour, *args):
         return triangles
 
 
-
+@torch.no_grad()
 def retriangulate(contour):
     net = get_connectivity_network(contour.shape[0])
 
@@ -100,7 +100,7 @@ def retriangulate(contour):
     input = torch.tensor(np.asarray(procrustes, dtype=np.float32).reshape((1,-1)))
     table = net(input)
 
-    table = table[0].detach().numpy().reshape([contour.shape[0], contour.shape[0]])
+    table = table[0].numpy().reshape([contour.shape[0], contour.shape[0]])
 
     # ordered_matrix = order_quality_matrix(table, procrustes)
     # new_elements, sub_contours, triangulation = triangulate(procrustes, ordered_matrix)
@@ -123,7 +123,7 @@ def retriangulate(contour):
             input = torch.tensor(sub_procrustes.astype(np.float32)).reshape((1,-1))
             table = net(input)
 
-            table = table[0].detach().numpy().reshape([sub.shape[0], sub.shape[0]])
+            table = table[0].numpy().reshape([sub.shape[0], sub.shape[0]])
 
             ordered_triangles = order_triangles(contour, table)
 
