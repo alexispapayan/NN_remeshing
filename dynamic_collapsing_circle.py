@@ -21,7 +21,7 @@ def distance_from_boundary_box(vertex):
     minimum_distance_from_boundary=np.min(distances)
     return minimum_distance_from_boundary
 
-def distance_from_interface(vertex):
+def distance_from_interface(mesh, vertex):
     interface_vertices_coords=mesh.points[mesh.interface_vertices][:,:2]
     vertex_coords=mesh.points[vertex][:2]
 
@@ -33,7 +33,7 @@ def get_vertices_with_interface_length(mesh):
     interface_vertices=[]
     for vertex in mesh.interior_vertices:
         distance_from_boundary=distance_from_boundary_box(vertex)
-        distance_from_inter=distance_from_interface(vertex)
+        distance_from_inter=distance_from_interface(mesh, vertex)
         if distance_from_inter<distance_from_boundary:
             interface_vertices.append(vertex)
     interface_vertices=np.array(interface_vertices)
@@ -99,7 +99,7 @@ while input() == '':
 
 
     for vertex in mesh.interface_vertices:
-        mesh.translate_vertex(vertex, -mesh.points[vertex]*0.05, False)
+        mesh.translate_vertex(vertex, mesh.points[vertex]*0.05, False)
 
 
 
@@ -134,6 +134,7 @@ while input() == '':
     mesh.target_edgelength=target_edgelength
     print("TARGET EDGE LENGTH ",target_edgelength)
 
+    mesh.refine_interface()
     mesh.refine()
     mesh.coarsen()
 
@@ -194,7 +195,7 @@ while input() == '':
     # mesh.coarsen_interface(target_edgelength_interface)
     mesh.reconnect()
     mesh.smooth_boundary()
-    mesh.smooth_interface()
+    # mesh.smooth_interface()
 
     mesh.smooth()
     radius=np.linalg.norm(mesh.points[4]-mesh.points[12],2)/2
