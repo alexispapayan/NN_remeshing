@@ -29,32 +29,39 @@ def distance_from_interface(mesh, vertex):
     distances=np.array([np.linalg.norm(i-vertex_coords,2) for i in interface_vertices_coords])
     return np.min(distances)
 
-def get_vertices_with_interface_length(mesh):
-    interface_vertices=[]
-    for vertex in mesh.interior_vertices:
-        distance_from_boundary=distance_from_boundary_box(vertex)
-        distance_from_inter=distance_from_interface(mesh, vertex)
-        if distance_from_inter<distance_from_boundary:
-            interface_vertices.append(vertex)
-    interface_vertices=np.array(interface_vertices)
-    return interface_vertices
+# def get_vertices_with_interface_length(mesh):
+#     interface_vertices=[]
+#     for vertex in mesh.interior_vertices:
+#         distance_from_boundary=distance_from_boundary_box(vertex)
+#         distance_from_inter=distance_from_interface(mesh, vertex)
+#         if distance_from_inter<distance_from_boundary:
+#             interface_vertices.append(vertex)
+#     interface_vertices=np.array(interface_vertices)
+#     return interface_vertices
+#
+# def get_interface_target_edge_length_edges(interface_target_edge_length_vertices):
+#     interface_edges=[]
+#     for vertex in interface_target_edge_length_vertices:
+#         objects=mesh.get_neighbourhood(vertex)
+#         neighbor_elements=mesh.get_elements()[objects]
+#
+#         neighbor_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in neighbor_elements]
+#         neighbor_edges=[edge for edge in neighbor_edges if edge[0] in interface_target_edge_length_vertices or edge[0] in mesh.interface_vertices  \
+#                     and edge[1] in interface_target_edge_length_vertices or edge[1] in mesh.interface_vertices]
+#         for edge in neighbor_edges:
+#             interface_edges.append(edge)
+#
+#     interface_edges=np.array(interface_edges)
+#     interface_edges = np.unique(interface_edges, axis=0)
+#     return interface_edges
 
-def get_interface_target_edge_length_edges(interface_target_edge_length_vertices):
-  interface_edges=[]
-  for vertex in interface_target_edge_length_vertices:
-          objects=mesh.get_neighbourhood(vertex)
-          neighbor_elements=mesh.get_elements()[objects]
-
-          neighbor_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in neighbor_elements]
-          neighbor_edges=[edge for edge in neighbor_edges if edge[0] in interface_target_edge_length_vertices or edge[0] in mesh.interface_vertices  \
-                        and edge[1] in interface_target_edge_length_vertices or edge[1] in mesh.interface_vertices]
-          for edge in neighbor_edges:
-              interface_edges.append(edge)
-
-  interface_edges=np.array(interface_edges)
-  interface_edges = np.unique(interface_edges, axis=0)
-  return interface_edges
-
+def get_interface_target_edgelength(mesh):
+    objects = mymesh.objects_boundary_includes_some(mesh.get_triangles(), 1, mesh.interface_vertices)
+    elements = mesh.get_triangles()[objects]
+    all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
+    edges = np.unique(all_edges, axis=0)
+    length = np.linalg.norm(mesh.points[edges[:,0]] - mesh.points[edges[:,1]], axis=1)
+    return np.mean(length)
 
 mesh = mymesh.read('meshes/circle_inside_square.vtk')
 # mesh.cells[0] = mesh.cells[0]._replace(data=np.array([[0],[1],[2],[3]], dtype=np.int))
@@ -88,7 +95,7 @@ while input() == '':
             interior_interface_vertices.append(vertex)
     interior_interface_vertices=np.array(interior_interface_vertices)
 
-    translatable_vertices=np.append(mesh.interface_vertices,interior_interface_vertices)
+    # translatable_vertices=np.append(mesh.interface_vertices,interior_interface_vertices)
 
 
 
@@ -116,19 +123,22 @@ while input() == '':
     # interface_edges = np.unique(interface_edges, axis=0)
 
 
-    interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
-    interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
-
-    length = np.linalg.norm(mesh.points[interface_edges[:,0]] - mesh.points[interface_edges[:,1]], axis=1)
-    target_edgelength_interface = np.mean(length)
+    # interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
+    # interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
+    #
+    # length = np.linalg.norm(mesh.points[interface_edges[:,0]] - mesh.points[interface_edges[:,1]], axis=1)
+    # target_edgelength_interface = np.mean(length)
+    target_edgelength_interface = get_interface_target_edgelength(mesh)
     print("TARGET EDGE LENGTH INTERFACE:",target_edgelength_interface)
-    mesh.interface_edges=interface_edges
+    # mesh.interface_edges=interface_edges
     mesh.target_edgelength_inteface=target_edgelength_interface
 
     elements = mesh.get_triangles()
     all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
     edges=np.unique(all_edges, axis=0)
-    edges=np.array([j for j in edges if j not in mesh.interface_edges])
+    # edges=np.array([j for j in edges if j not in mesh.interface_edges])
+    is_interface = mymesh.objects_boundary_includes_some(edges, 2, *mesh.interface_vertices)
+    edges = edges[~is_interface]
     length = np.linalg.norm(mesh.points[edges[:,0]] - mesh.points[edges[:,1]], axis=1)
     target_edgelength = np.mean(length)
     mesh.target_edgelength=target_edgelength
@@ -137,6 +147,7 @@ while input() == '':
     mesh.refine_interface()
     mesh.refine()
     mesh.coarsen()
+    # print(mesh.interface_vertices)
 
     interior_interface_vertices=[]
     for vertex in mesh.interior_vertices:
@@ -145,7 +156,7 @@ while input() == '':
             interior_interface_vertices.append(vertex)
     interior_interface_vertices=np.array(interior_interface_vertices)
 
-    translatable_vertices=np.append(mesh.interface_vertices,interior_interface_vertices)
+    # translatable_vertices=np.append(mesh.interface_vertices,interior_interface_vertices)
 
     # interface_edges=[]
     # for k in translatable_vertices:
@@ -159,10 +170,10 @@ while input() == '':
     # interface_edges=np.array(interface_edges)
     # interface_edges = np.unique(interface_edges, axis=0)
 
-    interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
-    interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
+    # interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
+    # interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
 
-    mesh.interface_edges=interface_edges
+    # mesh.interface_edges=interface_edges
 
 
 
@@ -181,14 +192,14 @@ while input() == '':
     # interface_edges=np.array(interface_edges)
     # interface_edges = np.unique(interface_edges, axis=0)
 
-    interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
-    interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
+    # interface_edge_length_vertices=get_vertices_with_interface_length(mesh)
+    # interface_edges=get_interface_target_edge_length_edges(interface_edge_length_vertices)
 
-    mesh.interface_edges=interface_edges
-
-
-
-    mesh.interface_edges=interface_edges
+    # mesh.interface_edges=interface_edges
+    #
+    #
+    #
+    # mesh.interface_edges=interface_edges
 
 
 
