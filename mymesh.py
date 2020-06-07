@@ -94,6 +94,9 @@ class ModifiableMesh(meshio.Mesh):
         else:
             return self.cells[self.line_index].data
 
+    def set_lines(self, lines):
+        self.cells[self.line_index] = self.cells[self.line_index]._replace(data=lines)
+
     def get_triangles(self):
         if self.triangle_index is None:
             return None
@@ -545,6 +548,55 @@ class ModifiableMesh(meshio.Mesh):
             else:
                 accepted = 0
 
+    def refine_boundary(self):
+        '''
+        Refine interfaces in the mesh using neural networks. Iterated until no further improvement is made.
+        '''
+        accepted = 1
+        iter = 1
+        while accepted > 0:
+            elements = self.get_triangles()
+            all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
+            edges = np.unique(all_edges, axis=0)
+
+            valid = np.concatenate([self.boundary_vertices, self.fixed_vertices])
+            is_boundary = objects_boundary_includes_some(edges, 2, *valid)
+            edges = edges[is_boundary]
+
+            length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
+            long = length > self.target_edgelength*1.6
+            edges = edges[long]
+            edges = edges[np.argsort(-length[long])]
+
+            keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
+            new_elements = []
+            for edge in edges:
+                accept, new, old = self.refine_interface_or_boundary_objects(edge)
+
+                if accept:
+                    new_index = len(self.points)-1
+                    self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
+                    edge_index = np.nonzero(((self.get_lines()[:,0] == edge[0]) & (self.get_lines()[:,1] == edge[1])) | ((self.get_lines()[:,1] == edge[0]) & (self.get_lines()[:,0] == edge[1])))[0]
+                    new_lines = np.remove(self.get_lines(), edge_index, axis=0)
+                    new_lines = np.append(new_lines, np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
+                    self.set_lines(new_lines)
+
+                    keep_elements = np.logical_and(~old, keep_elements)
+                    if len(new_elements) > 0:
+                        new_elements = np.append(new_elements, new, axis=0)
+                    else:
+                        new_elements = new
+                    accepted += 1
+
+            if len(new_elements) > 0:
+                elements = self.get_triangles()[keep_elements]
+                elements = np.append(elements, new_elements, axis=0)
+                self.set_triangles(elements)
+                print('Quality after {} boundary refinement iterations: {}'.format(iter, np.min(self.quality())))
+                iter += 1
+            else:
+                accepted = 0
+
     def refine_interface(self, target_edgelength_interface=None):
         '''
         Refine interfaces in the mesh using neural networks. Iterated until no further improvement is made.
@@ -562,7 +614,7 @@ class ModifiableMesh(meshio.Mesh):
             edges = edges[is_interface]
 
             length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-            long = length > target_edgelength_interface*1.2
+            long = length > target_edgelength_interface*1.6
             edges = edges[long]
             edges = edges[np.argsort(-length[long])]
 
@@ -574,7 +626,10 @@ class ModifiableMesh(meshio.Mesh):
                 if accept:
                     new_index = len(self.points)-1
                     self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
-                    new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
+                    edge_index = np.nonzero(((self.get_lines()[:,0] == edge[0]) & (self.get_lines()[:,1] == edge[1])) | ((self.get_lines()[:,1] == edge[0]) & (self.get_lines()[:,0] == edge[1])))[0]
+                    new_lines = np.remove(self.get_lines(), edge_index, axis=0)
+                    new_lines = np.append(new_lines, np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
+                    self.set_lines(new_lines)
 
                     keep_elements = np.logical_and(~old, keep_elements)
                     if len(new_elements) > 0:
@@ -768,56 +823,124 @@ class ModifiableMesh(meshio.Mesh):
                 accepted = 0
 
 
-    # def coarsen_interface(self,target_edgelength_interface):
-    #     '''
-    #     Coarsen the mesh using neural networks. Iterated until no further improvement is made.
-    #     '''
-    #     accepted = 1
-    #     iter = 1
-    #     while accepted > 0:
-    #         try:
-    #             partition, new_points = self.coarsen_partition_interface(target_edgelength_interface)
-    #         except:
-    #             accepted=0
-    #             break
-    #         groups = new_points.keys()
-    #         if len(groups) > 1:
-    #             keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
-    #             new_elements = []
-    #             accepted = 0
-    #             for g in groups:
-    #                 if g >= 0:
-    #                     objects = partition == g
-    #                     if np.count_nonzero(objects) > 1:
-    #                         accept, new, remove = self.refine_objects(objects, new_points[g])
-    #                         if accept:
-    #                             keep_elements = np.logical_and(~objects, keep_elements)
-    #                             try:
-    #                                 new_elements = np.append(new_elements, new, axis=0)
-    #                             except:
-    #                                 new_elements = new
-    #                             self.points = np.delete(self.points, remove, axis=0)
-    #                             remains = np.isin(self.interior_vertices, remove, invert=True)
-    #                             self.interior_vertices = self.interior_vertices[remains]
-    #                             for old in remove:
-    #                                 remove[remove > old] -=1
-    #                                 new_elements[new_elements > old] -= 1
-    #                                 self.interior_vertices[self.interior_vertices > old] -= 1
-    #                                 for cell in self.cells:
-    #                                     cell.data[cell.data > old] -= 1
-    #                             accepted += 1
-    #
-    #             elements = self.get_triangles()[keep_elements]
-    #
-    #             if len(new_elements) > 0:
-    #                 elements = np.append(elements, new_elements, axis=0)
-    #             self.set_triangles(elements)
-    #
-    #             print('Quality after {} coarsening interface iterations: {}'.format(iter, np.min(self.quality())))
-    #             iter += 1
-    #         else:
-    #             accepted = 0
+    def coarsen_boundary(self):
+        '''
+        Refine interfaces in the mesh using neural networks. Iterated until no further improvement is made.
+        '''
+        accepted = 1
+        iter = 1
+        while accepted > 0:
+            elements = self.get_triangles()
+            all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
+            edges = np.unique(all_edges, axis=0)
 
+            valid = np.concatenate([self.boundary_vertices, self.fixed_vertices])
+            is_boundary = objects_boundary_includes_some(edges, 2, *valid)
+            edges = edges[is_boundary]
+
+            length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
+            short = length < self.target_edgelength*0.7
+            edges = edges[short]
+            edges = edges[np.argsort(length[short])]
+
+            keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
+            new_elements = []
+            for edge in edges:
+                accept, new, old = self.coarsen_interface_or_boundary_objects(edge)
+
+                if accept:
+                    new_index = len(self.points)-1
+                    self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
+                    new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
+
+                    keep_elements = np.logical_and(~old, keep_elements)
+                    if len(new_elements) > 0:
+                        new_elements = np.append(new_elements, new, axis=0)
+                    else:
+                        new_elements = new
+                    accepted += 1
+
+            if len(new_elements) > 0:
+                elements = self.get_triangles()[keep_elements]
+                elements = np.append(elements, new_elements, axis=0)
+                self.set_triangles(elements)
+                print('Quality after {} boundary refinement iterations: {}'.format(iter, np.min(self.quality())))
+                iter += 1
+            else:
+                accepted = 0
+
+    def coarsen_interface(self, target_edgelength_interface=None):
+        '''
+        Refine interfaces in the mesh using neural networks. Iterated until no further improvement is made.
+        '''
+        if target_edgelength_interface is None:
+            target_edgelength_interface = self.target_edgelength_interface
+        accepted = 1
+        iter = 1
+        while accepted > 0:
+            elements = self.get_triangles()
+            all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
+            edges = np.unique(all_edges, axis=0)
+
+            is_interface = objects_boundary_includes_some(edges, 2, *self.interface_vertices)
+            edges = edges[is_interface]
+
+            length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
+            short = length < self.target_edgelength*0.7
+            edges = edges[short]
+            edges = edges[np.argsort(length[short])]
+
+            keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
+            new_elements = []
+            for edge in edges:
+                accept, new, old = self.coarsen_interface_or_boundary_objects(edge)
+
+                if accept:
+                    new_index = len(self.points)-1
+                    self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
+                    new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
+
+                    keep_elements = np.logical_and(~old, keep_elements)
+                    if len(new_elements) > 0:
+                        new_elements = np.append(new_elements, new, axis=0)
+                    else:
+                        new_elements = new
+                    accepted += 1
+
+            if len(new_elements) > 0:
+                elements = self.get_triangles()[keep_elements]
+                elements = np.append(elements, new_elements, axis=0)
+                self.set_triangles(elements)
+                print('Quality after {} interface refinement iterations: {}'.format(iter, np.min(self.quality())))
+                iter += 1
+            else:
+                accepted = 0
+
+    def coarsen_interface_or_boundary_objects(self, edge):
+        new_point = np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])
+        objects = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
+        self.points = np.append(self.points, new_point, axis=0)
+
+        new_elements = []
+        for triangle in self.get_triangles()[objects]:
+            while not np.all(np.isin(triangle[:2], edge)):
+                triangle = np.roll(triangle, 1)
+            index = np.concatenate([triangle[:1], [len(self.points)-1], triangle[1:]])
+            contour = self.points[index][:,:2]
+            new = retriangulate(contour)
+            if len(new_elements) == 0:
+                new_elements = np.take(index, new)
+            else:
+                new_elements = np.append(new_elements, np.take(index, new), axis=0)
+
+        new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
+        if np.min(new_quality) > 0:
+            accept = True
+        else:
+            accept = False
+            self.points = self.points[:-1]
+
+        return accept, new_elements, objects
 
     def coarsen_partition(self):
         '''
@@ -875,59 +998,6 @@ class ModifiableMesh(meshio.Mesh):
         partition[np.isin(partition, list(new_points.keys()), invert=True)] = -1
 
         return partition, new_points
-
-
-    # def coarsen_partition_interface(self,target_edgelength_interface):
-    #     '''
-    #     Partition the mesh into cavities to be coarsened.
-    #     '''
-    #     partition = np.arange(len(self.get_triangles()))
-    #
-    #     elements = self.get_triangles()
-    #     all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
-    #     edges = np.unique(all_edges, axis=0)
-    #
-    #     includes_boundary = objects_boundary_includes_some(edges, 1, *self.boundary_vertices)
-    #     edges = edges[~includes_boundary]
-    #
-    #     if len(self.interface_vertices > 0):
-    #         includes_interface = objects_boundary_includes_some(edges, 1, *self.interface_vertices)
-    #         edges = edges[~includes_interface]
-    #
-    #
-    #     edges =np.array([i for i in edges if i in self.interface_edges])
-    #     length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-    #     short = length < target_edgelength_interface*0.7
-    #     edges = edges[short]
-    #     edges = edges[np.argsort(length[short])]
-    #
-    #     new_points = {}
-    #     not_accepted = []
-    #     for edge in edges:
-    #         potential = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
-    #         group = np.min(partition[potential])
-    #         all_groups = np.unique(partition[potential])
-    #         selected = np.isin(partition, all_groups)
-    #
-    #         if np.all(np.isin(all_groups, list(new_points.keys()), invert=True)):
-    #             partition[selected] = group
-    #             new_points[group] = np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])
-    #         else:
-    #             contour, _, interior = self.get_contour(selected)
-    #             interior = interior[np.isin(interior, edge, invert=True)]
-    #             nodes = [new_points[g] for g in all_groups if g in new_points]
-    #             new = sum([len(n) for n in nodes])
-    #             if len(contour) < 9 and len(interior) + new < len(contour) - 3:
-    #                 partition[selected] = group
-    #                 new_points[group] = np.concatenate(nodes + [np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])], axis=0)
-    #                 for g in all_groups:
-    #                     if g != group and g in new_points:
-    #                         del new_points[g]
-    #
-    #
-    #     partition[np.isin(partition, list(new_points.keys()), invert=True)] = -1
-    #
-    #     return partition, new_points
 
     def coarsen_near_boundary_or_interface(self):
         elements = self.get_triangles()
