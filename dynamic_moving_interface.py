@@ -169,18 +169,19 @@ if __name__=="__main__":
         
          
         # Get all edges that are close up to a precribed distance from the interface
-        mesh.interface_edges,mesh.target_edgelength_inteface,mesh.target_edgelength=get_edges_close_to_interface(3e-1)
-                    
+        mesh.interface_edges,mesh.target_edgelength_inteface,mesh.target_edgelength=get_edges_close_to_interface(4e-1)
+        mesh.target_edgelength_inteface=0.12541589910398604
         mesh.refine_interface(mesh.target_edgelength_inteface)
         
         # Update to get the list if edges close to interface after refinement
-        mesh.interface_edges,_,_=get_edges_close_to_interface(3e-1)
+        mesh.interface_edges,_,_=get_edges_close_to_interface(4e-1)
         
         
         # mesh.coarsen_interface(mesh.target_edgelength_inteface)
 
-        #mesh.refine()
-        # mesh.coarsen()
+        mesh.refine()
+        # mesh.refine_boundary()
+        mesh.coarsen()
         mesh.reconnect()
         mesh.smooth()
         for vertex in mesh.boundary_vertices:
@@ -192,7 +193,7 @@ if __name__=="__main__":
         
    
         
-        mesh.plot_quality(True)
+        mesh.plot_quality(True) 
 
         
         plt.savefig('meshes/animations/shockwave/shockwave{:02}'.format(i))
