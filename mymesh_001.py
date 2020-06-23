@@ -337,9 +337,6 @@ class ModifiableMesh(meshio.Mesh):
             accepted=False
             return accepted
 
-
-
-
         tangents = derivative(np.array([0,1]))
         tangents /= np.linalg.norm(tangents, axis=1)[:,None]
 
@@ -349,8 +346,6 @@ class ModifiableMesh(meshio.Mesh):
             self.points[vertex] = old_point
             accepted=False
             return accepted
-
-
 
         fun = lambda s: np.dot(new_point - spline(s), derivative(s))
         try:
@@ -825,7 +820,7 @@ class ModifiableMesh(meshio.Mesh):
 
     def coarsen_boundary(self):
         '''
-        Refine interfaces in the mesh using neural networks. Iterated until no further improvement is made.
+        Coarsen boundaries in the mesh using neural networks. Iterated until no further improvement is made.
         '''
         accepted = 1
         iter = 1
@@ -846,18 +841,24 @@ class ModifiableMesh(meshio.Mesh):
             keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
             new_elements = []
             for edge in edges:
-                accept, new, old = self.coarsen_interface_or_boundary_objects(edge)
+                accept, new, objects = self.coarsen_boundary_objects(edge)
 
                 if accept:
-                    new_index = len(self.points)-1
-                    self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
-                    new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
-
-                    keep_elements = np.logical_and(~old, keep_elements)
-                    if len(new_elements) > 0:
+                    keep_elements = np.logical_and(~objects, keep_elements)
+                    try:
                         new_elements = np.append(new_elements, new, axis=0)
-                    else:
+                    except:
                         new_elements = new
+
+                    self.points = np.delete(self.points, edge, axis=0)
+                    for old in edge:
+                        remove[remove > old] -= 1
+                        new_elements[new_elements > old] -= 1
+                        self.interior_vertices[self.interior_vertices > old] -= 1
+                        self.interface_vertices[self.interface_vertices > old] -= 1
+                        self.boundary_vertices[self.boundary_vertices > old] -= 1
+                        for cell in self.cells:
+                            cell.data[cell.data > old] -= 1
                     accepted += 1
 
             if len(new_elements) > 0:
@@ -868,6 +869,41 @@ class ModifiableMesh(meshio.Mesh):
                 iter += 1
             else:
                 accepted = 0
+
+    def coarsen_boundary_objects(self, edge):
+        new_point = np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])
+        objects = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
+        self.points = np.append(self.points, new_point, axis=0)
+
+        contour, index, _ = self.get_contour(objects)
+        contour = contour[:-1,:2]
+        index = index[:-1]
+        rolled = np.roll(contour, 1, axis=0)
+        contour_direction = np.sign(np.sum(contour[:,1]*rolled[:,0] - contour[:,0]*rolled[:,1]))
+        if contour_direction < 0:
+            contour = contour[::-1]
+            index = index[::-1]
+
+        while ~np.all(np.isin(index[-2:], edge)):
+            index = np.roll(index, 1, axis=0)
+            contour = np.roll(contour, 1, axis=0)
+        contour = np.append(contour[:-2], new_point, axis=0)
+        index = np.append(index[:-2], len(self.points)-1, axis=0)
+
+        new = retriangulate(contour)
+        new_elements = np.take(index, new)
+
+        new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
+        if np.min(new_quality) > 0:
+            accept = True
+            self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
+            new_lines = np.append(self.get_lines(), np.array([[index[-2], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
+            self.set_lines(new_lines)
+        else:
+            accept = False
+            self.points = self.points[:-1]
+
+        return accept, new_elements, objects
 
     def coarsen_interface(self, target_edgelength_interface=None):
         '''
@@ -893,18 +929,24 @@ class ModifiableMesh(meshio.Mesh):
             keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
             new_elements = []
             for edge in edges:
-                accept, new, old = self.coarsen_interface_or_boundary_objects(edge)
+                accept, new, objects = self.coarsen_interface_objects(edge)
 
                 if accept:
-                    new_index = len(self.points)-1
-                    self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
-                    new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
-
-                    keep_elements = np.logical_and(~old, keep_elements)
-                    if len(new_elements) > 0:
+                    keep_elements = np.logical_and(~objects, keep_elements)
+                    try:
                         new_elements = np.append(new_elements, new, axis=0)
-                    else:
+                    except:
                         new_elements = new
+
+                    self.points = np.delete(self.points, edge, axis=0)
+                    for old in edge:
+                        remove[remove > old] -= 1
+                        new_elements[new_elements > old] -= 1
+                        self.interior_vertices[self.interior_vertices > old] -= 1
+                        self.interface_vertices[self.interface_vertices > old] -= 1
+                        self.boundary_vertices[self.boundary_vertices > old] -= 1
+                        for cell in self.cells:
+                            cell.data[cell.data > old] -= 1
                     accepted += 1
 
             if len(new_elements) > 0:
@@ -916,26 +958,34 @@ class ModifiableMesh(meshio.Mesh):
             else:
                 accepted = 0
 
-    def coarsen_interface_or_boundary_objects(self, edge):
+    def coarsen_interface_objects(self, edge):
         new_point = np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])
         objects = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
         self.points = np.append(self.points, new_point, axis=0)
 
-        new_elements = []
-        for triangle in self.get_triangles()[objects]:
-            while not np.all(np.isin(triangle[:2], edge)):
-                triangle = np.roll(triangle, 1)
-            index = np.concatenate([triangle[:1], [len(self.points)-1], triangle[1:]])
-            contour = self.points[index][:,:2]
-            new = retriangulate(contour)
-            if len(new_elements) == 0:
-                new_elements = np.take(index, new)
-            else:
-                new_elements = np.append(new_elements, np.take(index, new), axis=0)
+        contour, index, _ = self.get_contour(objects)
+        contour = contour[:-1,:2]
+        index = index[:-1]
+        rolled = np.roll(contour, 1, axis=0)
+        contour_direction = np.sign(np.sum(contour[:,1]*rolled[:,0] - contour[:,0]*rolled[:,1]))
+        if contour_direction < 0:
+            contour = contour[::-1]
+            index = index[::-1]
+
+        i = np.intersect1d(index, self.interface_vertices).sort()
+        index0 = np.append(index[i[0]:i[1]+1], len(self.points)-1)
+        index1 = np.concatenate([index[i[1]:], index[:i[0]+1], [len(self.points-1)]])
+
+        # for
+        new = retriangulate(contour)
+        new_elements = np.take(index, new)
 
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
         if np.min(new_quality) > 0:
             accept = True
+            self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
+            new_lines = np.append(self.get_lines(), np.array([[index[-2], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
+            self.set_lines(new_lines)
         else:
             accept = False
             self.points = self.points[:-1]
