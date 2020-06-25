@@ -962,6 +962,7 @@ class ModifiableMesh(meshio.Mesh):
         new_point = np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])
         objects = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
         self.points = np.append(self.points, new_point, axis=0)
+        new_index = len(self.points)-1
 
         contour, index, _ = self.get_contour(objects)
         contour = contour[:-1,:2]
@@ -973,12 +974,15 @@ class ModifiableMesh(meshio.Mesh):
             index = index[::-1]
 
         i = np.intersect1d(index, self.interface_vertices).sort()
-        index0 = np.append(index[i[0]:i[1]+1], len(self.points)-1)
-        index1 = np.concatenate([index[i[1]:], index[:i[0]+1], [len(self.points-1)]])
+        i0 = np.append(np.arange(i[0], i[1]+1), new_index)
+        i1 = np.concatenate([np.arange(i[1], len(index)), np.arange(i[0]+1), [new_index]])
+        # index0 = np.append(index[i[0]:i[1]+1], new_index)
+        # index1 = np.concatenate([index[i[1]:], index[:i[0]+1], [new_index]])
 
-        # for
-        new = retriangulate(contour)
-        new_elements = np.take(index, new)
+        new = retriangulate(contour[i0])
+        new_elements = np.take(index[i0], new)
+        new = retriangulate(contour[i1])
+        new_elements = np.append(np.take(index[i1], new))
 
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
         if np.min(new_quality) > 0:
