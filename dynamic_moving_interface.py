@@ -180,8 +180,9 @@ if __name__=="__main__":
 
         # mesh.coarsen_interface(mesh.target_edgelength_inteface)
 
-        #mesh.refine()
-        # mesh.coarsen()
+        mesh.refine()
+        # mesh.refine_boundary()
+        mesh.coarsen()
         mesh.reconnect()
         mesh.smooth_boundary()
         mesh.smooth()

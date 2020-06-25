@@ -80,7 +80,7 @@ for j in range(iterations):
 
     
     mesh.refine()
-    # mesh.coarsen()
+    mesh.coarsen()
     mesh.reconnect()
     
     mesh.interface_edges,_,_=get_edges_close_to_interface(radius,center)
