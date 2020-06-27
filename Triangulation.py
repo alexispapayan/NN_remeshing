@@ -81,15 +81,15 @@ from Neural_network import get_connectivity_network
       '''
 
 
-def simple_retriangulate(contour, *args):
-    if len(args) == 0:
-        raise ValueError('No interior points given')
-    elif len(args) > 1:
-        raise NotImplementedError('Refinement with multiple points not supported')
-    else:
-        n = len(contour)
-        triangles = np.array([[i, (i+1) % n, n] for i in range(n)])
-        return triangles
+# def simple_retriangulate(contour, *args):
+#     if len(args) == 0:
+#         raise ValueError('No interior points given')
+#     elif len(args) > 1:
+#         raise NotImplementedError('Refinement with multiple points not supported')
+#     else:
+#         n = len(contour)
+#         triangles = np.array([[i, (i+1) % n, n] for i in range(n)])
+#         return triangles
 
 
 @torch.no_grad()

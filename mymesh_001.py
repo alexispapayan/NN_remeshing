@@ -852,7 +852,7 @@ class ModifiableMesh(meshio.Mesh):
 
                     self.points = np.delete(self.points, edge, axis=0)
                     for old in edge:
-                        remove[remove > old] -= 1
+                        edge[edge > old] -= 1
                         new_elements[new_elements > old] -= 1
                         self.interior_vertices[self.interior_vertices > old] -= 1
                         self.interface_vertices[self.interface_vertices > old] -= 1
@@ -926,6 +926,15 @@ class ModifiableMesh(meshio.Mesh):
             edges = edges[short]
             edges = edges[np.argsort(length[short])]
 
+            e = 0
+            while e < len(edges)-1:
+                edge = edges[e]
+                unique = np.sum(np.concatenate([edges == edge[0], edges == edge[1]], axis=1), axis=1) != 1
+                unique[:e] = True
+                edges = edges[unique]
+                print(edges)
+                e += 1
+
             keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
             new_elements = []
             for edge in edges:
@@ -940,7 +949,7 @@ class ModifiableMesh(meshio.Mesh):
 
                     self.points = np.delete(self.points, edge, axis=0)
                     for old in edge:
-                        remove[remove > old] -= 1
+                        edge[edge > old] -= 1
                         new_elements[new_elements > old] -= 1
                         self.interior_vertices[self.interior_vertices > old] -= 1
                         self.interface_vertices[self.interface_vertices > old] -= 1
@@ -973,16 +982,22 @@ class ModifiableMesh(meshio.Mesh):
             contour = contour[::-1]
             index = index[::-1]
 
-        i = np.intersect1d(index, self.interface_vertices).sort()
-        i0 = np.append(np.arange(i[0], i[1]+1), new_index)
-        i1 = np.concatenate([np.arange(i[1], len(index)), np.arange(i[0]+1), [new_index]])
+        i = np.sort(np.intersect1d(index, self.interface_vertices))
+        iv = np.nonzero(np.isin(index, i))[0]
+        i0 = np.append(np.arange(iv[0], iv[1]+1), len(index))
+        i1 = np.concatenate([np.arange(iv[1], len(index)), np.arange(iv[0]+1), [len(index)]])
+        print(index)
+        print(i0)
+        print(i1)
+        contour = np.append(contour, new_point[:,:2], axis=0)
+        index = np.append(index, new_index)
         # index0 = np.append(index[i[0]:i[1]+1], new_index)
         # index1 = np.concatenate([index[i[1]:], index[:i[0]+1], [new_index]])
 
         new = retriangulate(contour[i0])
         new_elements = np.take(index[i0], new)
         new = retriangulate(contour[i1])
-        new_elements = np.append(np.take(index[i1], new))
+        new_elements = np.append(new_elements, np.take(index[i1], new), axis=0)
 
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
         if np.min(new_quality) > 0:

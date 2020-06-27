@@ -5,7 +5,7 @@ Created on Wed Apr 15 16:25:44 2020
 @author: alexi
 """
 
-import mymesh
+import mymesh_001 as mymesh
 import numpy as np
 from matplotlib import pyplot as plt
 from itertools import combinations
@@ -106,7 +106,7 @@ while input() == '':
 
 
     for vertex in mesh.interface_vertices:
-        mesh.translate_vertex(vertex, mesh.points[vertex]*0.05, False)
+        mesh.translate_vertex(vertex, mesh.points[vertex]*-0.05, False)
 
 
 
@@ -144,7 +144,8 @@ while input() == '':
     mesh.target_edgelength=target_edgelength
     print("TARGET EDGE LENGTH ",target_edgelength)
 
-    mesh.refine_interface()
+    mesh.coarsen_interface()
+    # mesh.refine_interface()
     mesh.refine()
     mesh.coarsen()
     # print(mesh.interface_vertices)
