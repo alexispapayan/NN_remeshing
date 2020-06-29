@@ -106,7 +106,7 @@ while input() == '':
 
 
     for vertex in mesh.interface_vertices:
-        mesh.translate_vertex(vertex, mesh.points[vertex]*0.05, False)
+        mesh.translate_vertex(vertex, mesh.points[vertex]*-0.05, False)
 
 
 

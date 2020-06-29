@@ -686,6 +686,8 @@ class ModifiableMesh(meshio.Mesh):
         objects = objects_boundary_includes_some(self.get_triangles(), 2, *edge)
         self.points = np.append(self.points, new_point, axis=0)
 
+        # quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
+        # q = np.min(quality)
         new_elements = []
         for triangle in self.get_triangles()[objects]:
             while not np.all(np.isin(triangle[:2], edge)):
@@ -932,37 +934,29 @@ class ModifiableMesh(meshio.Mesh):
                 unique = np.sum(np.concatenate([edges == edge[0], edges == edge[1]], axis=1), axis=1) != 1
                 unique[:e] = True
                 edges = edges[unique]
-                print(edges)
                 e += 1
 
-            keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
-            new_elements = []
+            changed = False
             for edge in edges:
                 accept, new, objects = self.coarsen_interface_objects(edge)
 
                 if accept:
-                    keep_elements = np.logical_and(~objects, keep_elements)
-                    try:
-                        new_elements = np.append(new_elements, new, axis=0)
-                    except:
-                        new_elements = new
-
                     self.points = np.delete(self.points, edge, axis=0)
+                    elements = np.append(self.get_triangles()[~objects], new, axis=0)
                     for old in edge:
-                        edge[edge > old] -= 1
-                        new_elements[new_elements > old] -= 1
+                        edges[edges > old] -= 1
+                        elements[elements > old] -= 1
                         self.interior_vertices[self.interior_vertices > old] -= 1
                         self.interface_vertices[self.interface_vertices > old] -= 1
                         self.boundary_vertices[self.boundary_vertices > old] -= 1
                         for cell in self.cells:
                             cell.data[cell.data > old] -= 1
+                    self.set_triangles(elements)
                     accepted += 1
+                    changed = True
 
-            if len(new_elements) > 0:
-                elements = self.get_triangles()[keep_elements]
-                elements = np.append(elements, new_elements, axis=0)
-                self.set_triangles(elements)
-                print('Quality after {} interface refinement iterations: {}'.format(iter, np.min(self.quality())))
+            if changed:
+                print('Quality after {} interface coarsening iterations: {}'.format(iter, np.min(self.quality())))
                 iter += 1
             else:
                 accepted = 0
@@ -986,13 +980,9 @@ class ModifiableMesh(meshio.Mesh):
         iv = np.nonzero(np.isin(index, i))[0]
         i0 = np.append(np.arange(iv[0], iv[1]+1), len(index))
         i1 = np.concatenate([np.arange(iv[1], len(index)), np.arange(iv[0]+1), [len(index)]])
-        print(index)
-        print(i0)
-        print(i1)
+
         contour = np.append(contour, new_point[:,:2], axis=0)
         index = np.append(index, new_index)
-        # index0 = np.append(index[i[0]:i[1]+1], new_index)
-        # index1 = np.concatenate([index[i[1]:], index[:i[0]+1], [new_index]])
 
         new = retriangulate(contour[i0])
         new_elements = np.take(index[i0], new)
@@ -1002,7 +992,7 @@ class ModifiableMesh(meshio.Mesh):
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
         if np.min(new_quality) > 0:
             accept = True
-            self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
+            self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
             new_lines = np.append(self.get_lines(), np.array([[index[-2], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
             self.set_lines(new_lines)
         else:
