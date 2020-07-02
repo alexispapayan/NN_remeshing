@@ -672,7 +672,7 @@ class ModifiableMesh(meshio.Mesh):
 
         new_elements = np.take(index, new)
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
-        if np.min(new_quality) > q:
+        if np.min(new_quality) > 0:
             accepted = True
         else:
             accepted = False
@@ -846,28 +846,23 @@ class ModifiableMesh(meshio.Mesh):
                 accept, new, objects = self.coarsen_boundary_objects(edge)
 
                 if accept:
-                    keep_elements = np.logical_and(~objects, keep_elements)
-                    try:
-                        new_elements = np.append(new_elements, new, axis=0)
-                    except:
-                        new_elements = new
-
                     self.points = np.delete(self.points, edge, axis=0)
+                    self.boundary_vertices = self.boundary_vertices[np.isin(self.boundary_vertices, edge, invert=True)]
+                    elements = np.append(self.get_triangles()[~objects], new, axis=0)
                     for old in edge:
-                        edge[edge > old] -= 1
-                        new_elements[new_elements > old] -= 1
+                        edges[edges > old] -= 1
+                        elements[elements > old] -= 1
                         self.interior_vertices[self.interior_vertices > old] -= 1
                         self.interface_vertices[self.interface_vertices > old] -= 1
                         self.boundary_vertices[self.boundary_vertices > old] -= 1
                         for cell in self.cells:
                             cell.data[cell.data > old] -= 1
+                    self.set_triangles(elements)
                     accepted += 1
+                    changed = True
 
-            if len(new_elements) > 0:
-                elements = self.get_triangles()[keep_elements]
-                elements = np.append(elements, new_elements, axis=0)
-                self.set_triangles(elements)
-                print('Quality after {} boundary refinement iterations: {}'.format(iter, np.min(self.quality())))
+            if changed:
+                print('Quality after {} boundary coarsening iterations: {}'.format(iter, np.min(self.quality())))
                 iter += 1
             else:
                 accepted = 0
@@ -942,6 +937,7 @@ class ModifiableMesh(meshio.Mesh):
 
                 if accept:
                     self.points = np.delete(self.points, edge, axis=0)
+                    self.interface_vertices = self.interface_vertices[np.isin(self.interface_vertices, edge, invert=True)]
                     elements = np.append(self.get_triangles()[~objects], new, axis=0)
                     for old in edge:
                         edges[edges > old] -= 1

@@ -212,6 +212,7 @@ while input() == '':
     mesh.smooth()
     radius=np.linalg.norm(mesh.points[4]-mesh.points[12],2)/2
     #radius=0.5
+    # plt.clf()
     mesh.plot_quality(True)
     plt.draw()
     # plt.savefig('meshes/animations/collapsing_circle/collapsing_circle{:02}'.format(i))
