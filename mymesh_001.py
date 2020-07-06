@@ -225,13 +225,13 @@ class ModifiableMesh(meshio.Mesh):
             partition = partition[np.argsort(vertex_quality)]
         return partition
 
-    def smooth_boundary(self):
+    def smooth_boundary(self, maxiter=10):
         '''
         Smooth the boundary vertices of a mesh using neural networks. Iterates until no further improvement is made.
         '''
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             partition = self.boundary_partition()
             if len(partition) > 0:
                 accepted = 0
@@ -255,7 +255,13 @@ class ModifiableMesh(meshio.Mesh):
         quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
         q = np.min(quality)
 
-        spline, derivative = self.get_spline([index[0], vertex, index[-1]])
+        try:
+            spline, derivative = self.get_spline([index[0], vertex, index[-1]])
+        except:
+            self.points[vertex] = old_point
+            accepted = False
+            return accepted
+
         tangents = derivative(np.array([0,1]))
         tangents /= np.linalg.norm(tangents, axis=1)[:,None]
 
@@ -291,13 +297,13 @@ class ModifiableMesh(meshio.Mesh):
             partition = partition[np.argsort(vertex_quality)]
         return partition
 
-    def smooth_interface(self):
+    def smooth_interface(self, maxiter=10):
         '''
         Smooth the interface vertices of a mesh using neural networks. Iterates until no further improvement is made.
         '''
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             partition = self.interface_partition()
             if len(partition) > 0:
                 accepted = 0
@@ -320,7 +326,7 @@ class ModifiableMesh(meshio.Mesh):
             contour, index, _ = self.get_contour(objects)
         except:
             self.points[vertex] = old_point
-            accepted=False
+            accepted = False
             return accepted
 
         contour = contour[:,:2] # 2D only !
@@ -545,7 +551,7 @@ class ModifiableMesh(meshio.Mesh):
 
     def refine_boundary(self):
         '''
-        Refine interfaces in the mesh using neural networks. Iterated until no further improvement is made.
+        Refine the boundary of the mesh using neural networks. Iterated until no further improvement is made.
         '''
         accepted = 1
         iter = 1
@@ -572,7 +578,7 @@ class ModifiableMesh(meshio.Mesh):
                     new_index = len(self.points)-1
                     self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
                     edge_index = np.nonzero(((self.get_lines()[:,0] == edge[0]) & (self.get_lines()[:,1] == edge[1])) | ((self.get_lines()[:,1] == edge[0]) & (self.get_lines()[:,0] == edge[1])))[0]
-                    new_lines = np.remove(self.get_lines(), edge_index, axis=0)
+                    new_lines = np.delete(self.get_lines(), edge_index, axis=0)
                     new_lines = np.append(new_lines, np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
                     self.set_lines(new_lines)
 
@@ -622,7 +628,7 @@ class ModifiableMesh(meshio.Mesh):
                     new_index = len(self.points)-1
                     self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
                     edge_index = np.nonzero(((self.get_lines()[:,0] == edge[0]) & (self.get_lines()[:,1] == edge[1])) | ((self.get_lines()[:,1] == edge[0]) & (self.get_lines()[:,0] == edge[1])))[0]
-                    new_lines = np.remove(self.get_lines(), edge_index, axis=0)
+                    new_lines = np.delete(self.get_lines(), edge_index, axis=0)
                     new_lines = np.append(new_lines, np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
                     self.set_lines(new_lines)
 
@@ -840,8 +846,15 @@ class ModifiableMesh(meshio.Mesh):
             edges = edges[short]
             edges = edges[np.argsort(length[short])]
 
-            keep_elements = np.ones(len(self.get_triangles()), dtype=np.bool)
-            new_elements = []
+            e = 0
+            while e < len(edges)-1:
+                edge = edges[e]
+                unique = np.sum(np.concatenate([edges == edge[0], edges == edge[1]], axis=1), axis=1) != 1
+                unique[:e] = True
+                edges = edges[unique]
+                e += 1
+
+            changed = False
             for edge in edges:
                 accept, new, objects = self.coarsen_boundary_objects(edge)
 
@@ -863,6 +876,7 @@ class ModifiableMesh(meshio.Mesh):
 
             if changed:
                 print('Quality after {} boundary coarsening iterations: {}'.format(iter, np.min(self.quality())))
+                print(self.boundary_vertices)
                 iter += 1
             else:
                 accepted = 0
@@ -871,8 +885,18 @@ class ModifiableMesh(meshio.Mesh):
         new_point = np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])
         objects = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
         self.points = np.append(self.points, new_point, axis=0)
+        new_index = len(self.points)-1
 
-        contour, index, _ = self.get_contour(objects)
+        try:
+            contour, index, _ = self.get_contour(objects)
+        except:
+            print(edge)
+            print(self.get_triangles()[objects])
+            plt.clf()
+            self.plot_quality(True)
+            input()
+            raise ValueError
+
         contour = contour[:-1,:2]
         index = index[:-1]
         rolled = np.roll(contour, 1, axis=0)
@@ -884,8 +908,8 @@ class ModifiableMesh(meshio.Mesh):
         while ~np.all(np.isin(index[-2:], edge)):
             index = np.roll(index, 1, axis=0)
             contour = np.roll(contour, 1, axis=0)
-        contour = np.append(contour[:-2], new_point, axis=0)
-        index = np.append(index[:-2], len(self.points)-1, axis=0)
+        contour = np.append(contour[:-2], new_point[:,:2], axis=0)
+        index = np.append(index[:-2], [new_index], axis=0)
 
         new = retriangulate(contour)
         new_elements = np.take(index, new)
@@ -1362,9 +1386,13 @@ class ModifiableMesh(meshio.Mesh):
         contour = contour[:-1]
         index = index[:-1]
         valid = np.union1d(self.boundary_vertices, self.fixed_vertices)
-        while index[0] not in valid or index[1] in valid:
+        i = 0
+        while index[0] not in valid or index[1] in valid:#
+            if i == len(index):
+                raise ValueError('Invalid open contour')
             contour = np.roll(contour, 1, axis=0)
             index = np.roll(index, 1, axis=0)
+            i += 1
         n_boundary = np.count_nonzero(np.isin(index, valid))
         end = len(contour) - (n_boundary - 2)
         return contour[:end], index[:end], index[end:]
