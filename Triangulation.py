@@ -94,6 +94,8 @@ from Neural_network import get_connectivity_network
 
 @torch.no_grad()
 def retriangulate(contour):
+    if len(contour) == 3:
+        return np.array([0,1,2], dtype=np.int)
     net = get_connectivity_network(contour.shape[0])
 
     procrustes = apply_procrustes(contour)

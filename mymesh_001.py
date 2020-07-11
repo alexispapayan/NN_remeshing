@@ -248,7 +248,9 @@ class ModifiableMesh(meshio.Mesh):
         Smooth a boundary vertex.
         '''
         objects = self.get_neighbourhood(vertex)
-        contour, index, _ = self.get_open_contour(objects)
+        contour, index = self.get_open_contour(objects, vertex)
+        if len(contour) < 3:
+            return False
         contour = contour[:,:2] # 2D only !
 
         old_point = np.copy(self.points[vertex])
@@ -558,7 +560,8 @@ class ModifiableMesh(meshio.Mesh):
         while accepted > 0:
             elements = self.get_triangles()
             all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
-            edges = np.unique(all_edges, axis=0)
+            # edges = np.unique(all_edges, axis=0)
+            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,0], self.get_lines()[:,0])]
 
             valid = np.concatenate([self.boundary_vertices, self.fixed_vertices])
             is_boundary = objects_boundary_includes_some(edges, 2, *valid)
@@ -609,7 +612,8 @@ class ModifiableMesh(meshio.Mesh):
         while accepted > 0:
             elements = self.get_triangles()
             all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
-            edges = np.unique(all_edges, axis=0)
+            # edges = np.unique(all_edges, axis=0)
+            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,0], self.get_lines()[:,0])]
 
             is_interface = objects_boundary_includes_some(edges, 2, *self.interface_vertices)
             edges = edges[is_interface]
@@ -835,7 +839,8 @@ class ModifiableMesh(meshio.Mesh):
         while accepted > 0:
             elements = self.get_triangles()
             all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
-            edges = np.unique(all_edges, axis=0)
+            # edges = np.unique(all_edges, axis=0)
+            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,0], self.get_lines()[:,0])]
 
             valid = np.concatenate([self.boundary_vertices, self.fixed_vertices])
             is_boundary = objects_boundary_includes_some(edges, 2, *valid)
@@ -876,7 +881,6 @@ class ModifiableMesh(meshio.Mesh):
 
             if changed:
                 print('Quality after {} boundary coarsening iterations: {}'.format(iter, np.min(self.quality())))
-                print(self.boundary_vertices)
                 iter += 1
             else:
                 accepted = 0
@@ -890,11 +894,6 @@ class ModifiableMesh(meshio.Mesh):
         try:
             contour, index, _ = self.get_contour(objects)
         except:
-            print(edge)
-            print(self.get_triangles()[objects])
-            plt.clf()
-            self.plot_quality(True)
-            input()
             raise ValueError
 
         contour = contour[:-1,:2]
@@ -905,15 +904,22 @@ class ModifiableMesh(meshio.Mesh):
             contour = contour[::-1]
             index = index[::-1]
 
+        i = 0
         while ~np.all(np.isin(index[-2:], edge)):
+            if i == len(index):
+                print(edge, self.get_triangles()[objects], index)
+                raise ValueError('Invalid contour')
             index = np.roll(index, 1, axis=0)
             contour = np.roll(contour, 1, axis=0)
+            i += 1
         contour = np.append(contour[:-2], new_point[:,:2], axis=0)
         index = np.append(index[:-2], [new_index], axis=0)
 
         new = retriangulate(contour)
         new_elements = np.take(index, new)
 
+        if new_elements.ndim == 1:
+            new_elements = np.array([new_elements])
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
         if np.min(new_quality) > 0:
             accept = True
@@ -928,7 +934,7 @@ class ModifiableMesh(meshio.Mesh):
 
     def coarsen_interface(self, target_edgelength_interface=None):
         '''
-        Refine interfaces in the mesh using neural networks. Iterated until no further improvement is made.
+        Coarsen interfaces in the mesh using neural networks. Iterated until no further improvement is made.
         '''
         if target_edgelength_interface is None:
             target_edgelength_interface = self.target_edgelength_interface
@@ -937,7 +943,8 @@ class ModifiableMesh(meshio.Mesh):
         while accepted > 0:
             elements = self.get_triangles()
             all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
-            edges = np.unique(all_edges, axis=0)
+            # edges = np.unique(all_edges, axis=0)
+            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,0], self.get_lines()[:,0])]
 
             is_interface = objects_boundary_includes_some(edges, 2, *self.interface_vertices)
             edges = edges[is_interface]
@@ -1085,7 +1092,8 @@ class ModifiableMesh(meshio.Mesh):
 
         boundary_or_interface = np.concatenate([self.boundary_vertices, self.interface_vertices])
         near_boundary_or_interface = objects_boundary_includes_some(edges, 1, *boundary_or_interface)
-        on_boundary_or_interface = objects_boundary_includes_some(edges, 2, *boundary_or_interface)
+        # on_boundary_or_interface = objects_boundary_includes_some(edges, 2, *boundary_or_interface)
+        on_boundary_or_interface = (np.isin(edges[:,0], self.get_lines()[:,0]) & np.isin(edges[:,0], self.get_lines()[:,0])) | (np.isin(edges[:,0], self.get_lines()[:,1]) & np.isin(edges[:,1], self.get_lines()[:,0]))
 
         edges = edges[np.logical_and(near_boundary_or_interface, ~on_boundary_or_interface)]
 
@@ -1306,9 +1314,10 @@ class ModifiableMesh(meshio.Mesh):
 
         elements = self.get_triangles()
         all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
+        # is_interior = np.any(np.isin(edges, self.interior_vertices, assume_unique=False), axis=1)
+        # interior_edges = edges[is_interior]
+        all_edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0], invert=True) | np.isin(all_edges[:,0], self.get_lines()[:,0], invert=True)]
         edges = np.unique(all_edges, axis=0)
-        is_interior = np.any(np.isin(edges, self.interior_vertices, assume_unique=False), axis=1)
-        interior_edges = edges[is_interior]
 
         swap = self.generator.integers(2, size=len(interior_edges), dtype=np.bool)
         for e, edge in enumerate(interior_edges):
@@ -1378,24 +1387,36 @@ class ModifiableMesh(meshio.Mesh):
 
         return self.points[boundary], np.array(boundary), interior_points
 
-    def get_open_contour(self, objects):
+    def get_open_contour(self, objects, vertex):
         '''
         Get the open contour that surrounds objects
         '''
         contour, index, _ = self.get_contour(objects)
         contour = contour[:-1]
         index = index[:-1]
-        valid = np.union1d(self.boundary_vertices, self.fixed_vertices)
+
         i = 0
-        while index[0] not in valid or index[1] in valid:#
+        while index[-1] != vertex:
             if i == len(index):
+                print(self.get_triangles()[objects], vertex)
+                plt.clf()
+                self.plot_quality(True)
+                plt.savefig('error.png')
                 raise ValueError('Invalid open contour')
             contour = np.roll(contour, 1, axis=0)
             index = np.roll(index, 1, axis=0)
             i += 1
-        n_boundary = np.count_nonzero(np.isin(index, valid))
-        end = len(contour) - (n_boundary - 2)
-        return contour[:end], index[:end], index[end:]
+        # valid = np.union1d(self.boundary_vertices, self.fixed_vertices)
+        # i = 0
+        # while index[0] not in valid or index[1] in valid:#
+        #     if i == len(index):
+        #         raise ValueError('Invalid open contour')
+        #     contour = np.roll(contour, 1, axis=0)
+        #     index = np.roll(index, 1, axis=0)
+        #     i += 1
+        # n_boundary = np.count_nonzero(np.isin(index, valid))
+        # end = len(contour) - (n_boundary - 2)
+        return contour[:-1], index[:-1]
 
     def contour_length(self, contour):
         vertices = self.points[contour]

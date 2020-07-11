@@ -48,7 +48,7 @@ if __name__=='__main__':
 
     x0,y0=initial_points[:,0],initial_points[:,1]
 
-    while(t<T):
+    while(t<T): # and input() == '':
          i+=1
 
          plt.clf()
