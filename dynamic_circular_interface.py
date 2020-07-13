@@ -30,7 +30,7 @@ if __name__=='__main__':
 
     mesh = mymesh.read('meshes/circle2.vtk')
     mesh.fixed_vertices=np.array([], dtype=np.int64)
-    mesh.boundary_vertices=np.append(mesh.boundary_vertices,0)
+    mesh.boundary_vertices=np.append(mesh.boundary_vertices, 0)
 
     plt.ion()
     mesh.plot_quality(True)

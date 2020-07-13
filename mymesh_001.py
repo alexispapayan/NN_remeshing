@@ -561,7 +561,7 @@ class ModifiableMesh(meshio.Mesh):
             elements = self.get_triangles()
             all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
             # edges = np.unique(all_edges, axis=0)
-            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,0], self.get_lines()[:,0])]
+            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,1], self.get_lines()[:,1])]
 
             valid = np.concatenate([self.boundary_vertices, self.fixed_vertices])
             is_boundary = objects_boundary_includes_some(edges, 2, *valid)
@@ -580,8 +580,8 @@ class ModifiableMesh(meshio.Mesh):
                 if accept:
                     new_index = len(self.points)-1
                     self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
-                    edge_index = np.nonzero(((self.get_lines()[:,0] == edge[0]) & (self.get_lines()[:,1] == edge[1])) | ((self.get_lines()[:,1] == edge[0]) & (self.get_lines()[:,0] == edge[1])))[0]
-                    new_lines = np.delete(self.get_lines(), edge_index, axis=0)
+                    edge_index = ((self.get_lines()[:,0] == edge[0]) & (self.get_lines()[:,1] == edge[1])) | ((self.get_lines()[:,1] == edge[0]) & (self.get_lines()[:,0] == edge[1]))
+                    new_lines = self.get_lines()[~edge_index]
                     new_lines = np.append(new_lines, np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
                     self.set_lines(new_lines)
 
@@ -613,7 +613,7 @@ class ModifiableMesh(meshio.Mesh):
             elements = self.get_triangles()
             all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
             # edges = np.unique(all_edges, axis=0)
-            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,0], self.get_lines()[:,0])]
+            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,1], self.get_lines()[:,1])]
 
             is_interface = objects_boundary_includes_some(edges, 2, *self.interface_vertices)
             edges = edges[is_interface]
@@ -631,8 +631,8 @@ class ModifiableMesh(meshio.Mesh):
                 if accept:
                     new_index = len(self.points)-1
                     self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
-                    edge_index = np.nonzero(((self.get_lines()[:,0] == edge[0]) & (self.get_lines()[:,1] == edge[1])) | ((self.get_lines()[:,1] == edge[0]) & (self.get_lines()[:,0] == edge[1])))[0]
-                    new_lines = np.delete(self.get_lines(), edge_index, axis=0)
+                    edge_index = ((self.get_lines()[:,0] == edge[0]) & (self.get_lines()[:,1] == edge[1])) | ((self.get_lines()[:,1] == edge[0]) & (self.get_lines()[:,0] == edge[1]))
+                    new_lines = self.get_lines()[~edge_index]
                     new_lines = np.append(new_lines, np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
                     self.set_lines(new_lines)
 
@@ -840,7 +840,7 @@ class ModifiableMesh(meshio.Mesh):
             elements = self.get_triangles()
             all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
             # edges = np.unique(all_edges, axis=0)
-            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,0], self.get_lines()[:,0])]
+            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,1], self.get_lines()[:,1])]
 
             valid = np.concatenate([self.boundary_vertices, self.fixed_vertices])
             is_boundary = objects_boundary_includes_some(edges, 2, *valid)
@@ -894,6 +894,11 @@ class ModifiableMesh(meshio.Mesh):
         try:
             contour, index, _ = self.get_contour(objects)
         except:
+            print(self.boundary_vertices)
+            print(self.get_lines())
+            plt.clf()
+            self.plot_quality(True)
+            plt.savefig('error.png')
             raise ValueError
 
         contour = contour[:-1,:2]
@@ -924,7 +929,9 @@ class ModifiableMesh(meshio.Mesh):
         if np.min(new_quality) > 0:
             accept = True
             self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
-            new_lines = np.append(self.get_lines(), np.array([[index[-2], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
+            old_edges = np.any(np.isin(self.get_lines(), edge), axis=1)
+            new_lines = self.get_lines()[~old_edges]
+            new_lines = np.append(new_lines, np.array([[index[-3], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
             self.set_lines(new_lines)
         else:
             accept = False
@@ -944,7 +951,7 @@ class ModifiableMesh(meshio.Mesh):
             elements = self.get_triangles()
             all_edges = np.array([np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements], dtype=np.int)
             # edges = np.unique(all_edges, axis=0)
-            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,0], self.get_lines()[:,0])]
+            edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0]) & np.isin(all_edges[:,1], self.get_lines()[:,1])]
 
             is_interface = objects_boundary_includes_some(edges, 2, *self.interface_vertices)
             edges = edges[is_interface]
@@ -1020,7 +1027,9 @@ class ModifiableMesh(meshio.Mesh):
         if np.min(new_quality) > 0:
             accept = True
             self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
-            new_lines = np.append(self.get_lines(), np.array([[index[-2], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
+            old_edges = np.any(np.isin(self.get_lines(), edge), axis=1)
+            new_lines = self.get_lines()[~old_edges]
+            new_lines = np.append(new_lines, np.array([[index[-2], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
             self.set_lines(new_lines)
         else:
             accept = False
@@ -1093,7 +1102,7 @@ class ModifiableMesh(meshio.Mesh):
         boundary_or_interface = np.concatenate([self.boundary_vertices, self.interface_vertices])
         near_boundary_or_interface = objects_boundary_includes_some(edges, 1, *boundary_or_interface)
         # on_boundary_or_interface = objects_boundary_includes_some(edges, 2, *boundary_or_interface)
-        on_boundary_or_interface = (np.isin(edges[:,0], self.get_lines()[:,0]) & np.isin(edges[:,0], self.get_lines()[:,0])) | (np.isin(edges[:,0], self.get_lines()[:,1]) & np.isin(edges[:,1], self.get_lines()[:,0]))
+        on_boundary_or_interface = (np.isin(edges[:,0], self.get_lines()[:,0]) & np.isin(edges[:,1], self.get_lines()[:,1])) | (np.isin(edges[:,0], self.get_lines()[:,1]) & np.isin(edges[:,1], self.get_lines()[:,0]))
 
         edges = edges[np.logical_and(near_boundary_or_interface, ~on_boundary_or_interface)]
 
@@ -1316,7 +1325,7 @@ class ModifiableMesh(meshio.Mesh):
         all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
         # is_interior = np.any(np.isin(edges, self.interior_vertices, assume_unique=False), axis=1)
         # interior_edges = edges[is_interior]
-        all_edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0], invert=True) | np.isin(all_edges[:,0], self.get_lines()[:,0], invert=True)]
+        all_edges = all_edges[np.isin(all_edges[:,0], self.get_lines()[:,0], invert=True) | np.isin(all_edges[:,1], self.get_lines()[:,1], invert=True)]
         edges = np.unique(all_edges, axis=0)
 
         swap = self.generator.integers(2, size=len(interior_edges), dtype=np.bool)
@@ -1398,10 +1407,6 @@ class ModifiableMesh(meshio.Mesh):
         i = 0
         while index[-1] != vertex:
             if i == len(index):
-                print(self.get_triangles()[objects], vertex)
-                plt.clf()
-                self.plot_quality(True)
-                plt.savefig('error.png')
                 raise ValueError('Invalid open contour')
             contour = np.roll(contour, 1, axis=0)
             index = np.roll(index, 1, axis=0)
