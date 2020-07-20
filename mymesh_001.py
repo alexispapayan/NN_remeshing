@@ -248,7 +248,15 @@ class ModifiableMesh(meshio.Mesh):
         Smooth a boundary vertex.
         '''
         objects = self.get_neighbourhood(vertex)
-        contour, index = self.get_open_contour(objects, vertex)
+        try:
+            contour, index = self.get_open_contour(objects, vertex)
+        except ValueError:
+            print(vertex)
+            print(self.get_triangles()[objects])
+            # plt.clf()
+            # self.plot_quality(True)
+            # plt.savefig('error.png')
+            raise ValueError('Invalid contour')
         if len(contour) < 3:
             return False
         contour = contour[:,:2] # 2D only !
@@ -660,8 +668,8 @@ class ModifiableMesh(meshio.Mesh):
         self.points = np.append(self.points, new_points, axis=0)
         self.interior_vertices = np.append(self.interior_vertices, new_index)
 
-        quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
-        q = np.min(quality)
+        # quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
+        # q = np.min(quality)
         try:
             contour, index, interior = self.get_contour(objects)
         except ValueError:
@@ -891,6 +899,9 @@ class ModifiableMesh(meshio.Mesh):
         self.points = np.append(self.points, new_point, axis=0)
         new_index = len(self.points)-1
 
+        # quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
+        # q = np.min(quality)
+
         try:
             contour, index, _ = self.get_contour(objects)
         except:
@@ -1000,6 +1011,9 @@ class ModifiableMesh(meshio.Mesh):
         objects = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
         self.points = np.append(self.points, new_point, axis=0)
         new_index = len(self.points)-1
+
+        # quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
+        # q = np.min(quality)
 
         contour, index, _ = self.get_contour(objects)
         contour = contour[:-1,:2]

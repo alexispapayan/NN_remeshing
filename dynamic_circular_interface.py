@@ -32,13 +32,13 @@ if __name__=='__main__':
     mesh.fixed_vertices=np.array([], dtype=np.int64)
     mesh.boundary_vertices=np.append(mesh.boundary_vertices, 0)
 
-    plt.ion()
-    mesh.plot_quality(True)
-    plt.axis([0,1,0,1])
-    plt.draw()
+    # plt.ion()
+    # mesh.plot_quality(True)
+    # plt.axis([0,1,0,1])
+    # plt.draw()
 
     i=0
-    # plt.savefig('meshes/animations/circular_interface/circle{:02}'.format(i))
+    # plt.savefig('animations/circular_interface/circle{:02}'.format(i))
     T=3 # Parameter for maximum deformation the bigger the more deformed the circle
     t=0.0
     dt=0.02 # timestep
@@ -51,7 +51,7 @@ if __name__=='__main__':
     while(t<T): # and input() == '':
          i+=1
 
-         plt.clf()
+         # plt.clf()
 
 
 
@@ -111,15 +111,21 @@ if __name__=='__main__':
 
          mesh.reconnect()
 
+         # mesh.plot_quality(True)  # change to plt.axis([0,1,0,1]) to see full effect
+         # plt.axis([0,1,0,1])
+         # plt.draw()
+         # plt.savefig('animations/circular_interface/circle{:02}'.format(i))
 
          mesh.smooth_boundary()
+
 
 
          mesh.smooth()
 
 
-         mesh.plot_quality(True)  # change to plt.axis([0,1,0,1]) to see full effect
-         plt.axis([0,1,0,1])
+         # mesh.plot_quality(True)  # change to plt.axis([0,1,0,1]) to see full effect
+         # plt.axis([0,1,0,1])
+         # plt.draw()
          # plt.plot(mesh.points[mesh.boundary_vertices][:,0],mesh.points[mesh.boundary_vertices][:,1])
          t+=dt
-         # plt.savefig('meshes/animations/circular_interface/circle{:02}'.format(i))
+         # plt.savefig('animations/circular_interface/circle{:02}'.format(i))
