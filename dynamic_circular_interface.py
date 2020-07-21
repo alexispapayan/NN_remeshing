@@ -102,12 +102,14 @@ if __name__=='__main__':
 
 
          mesh.refine()
+
          mesh.coarsen()
          # if t<T/2:
          mesh.refine_boundary()
+
+
          # else:
          mesh.coarsen_boundary()
-
 
          mesh.reconnect()
 
@@ -118,10 +120,7 @@ if __name__=='__main__':
 
          mesh.smooth_boundary()
 
-
-
          mesh.smooth()
-
 
          # mesh.plot_quality(True)  # change to plt.axis([0,1,0,1]) to see full effect
          # plt.axis([0,1,0,1])

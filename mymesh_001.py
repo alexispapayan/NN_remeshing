@@ -253,9 +253,9 @@ class ModifiableMesh(meshio.Mesh):
         except ValueError:
             print(vertex)
             print(self.get_triangles()[objects])
-            # plt.clf()
-            # self.plot_quality(True)
-            # plt.savefig('error.png')
+            plt.clf()
+            self.plot_quality(True)
+            plt.savefig('error.png')
             raise ValueError('Invalid contour')
         if len(contour) < 3:
             return False
@@ -822,6 +822,7 @@ class ModifiableMesh(meshio.Mesh):
                                     self.interior_vertices[self.interior_vertices > old] -= 1
                                     self.interface_vertices[self.interface_vertices > old] -= 1
                                     self.boundary_vertices[self.boundary_vertices > old] -= 1
+                                    self.fixed_vertices[self.fixed_vertices > old] -= 1
                                     for cell in self.cells:
                                         cell.data[cell.data > old] -= 1
                                 accepted += 1
@@ -881,6 +882,7 @@ class ModifiableMesh(meshio.Mesh):
                         self.interior_vertices[self.interior_vertices > old] -= 1
                         self.interface_vertices[self.interface_vertices > old] -= 1
                         self.boundary_vertices[self.boundary_vertices > old] -= 1
+                        self.fixed_vertices[self.fixed_vertices > old] -= 1
                         for cell in self.cells:
                             cell.data[cell.data > old] -= 1
                     self.set_triangles(elements)
@@ -942,7 +944,7 @@ class ModifiableMesh(meshio.Mesh):
             self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
             old_edges = np.any(np.isin(self.get_lines(), edge), axis=1)
             new_lines = self.get_lines()[~old_edges]
-            new_lines = np.append(new_lines, np.array([[index[-3], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
+            new_lines = np.append(new_lines, np.array([[index[-2], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
             self.set_lines(new_lines)
         else:
             accept = False
@@ -994,6 +996,7 @@ class ModifiableMesh(meshio.Mesh):
                         self.interior_vertices[self.interior_vertices > old] -= 1
                         self.interface_vertices[self.interface_vertices > old] -= 1
                         self.boundary_vertices[self.boundary_vertices > old] -= 1
+                        self.fixed_vertices[self.fixed_vertices > old] -= 1
                         for cell in self.cells:
                             cell.data[cell.data > old] -= 1
                     self.set_triangles(elements)
