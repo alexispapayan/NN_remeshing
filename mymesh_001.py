@@ -12,7 +12,7 @@ from scipy.optimize import brentq
 from matplotlib import pyplot as plt
 
 class ModifiableMesh(meshio.Mesh):
-    def __init__(self, points, cells, point_data=None, cell_data=None, field_data=None, point_sets=None, cell_sets=None, gmsh_periodic=None, info=None, normal=None, target_edgelength=None,target_edgelength_interface=None,interface_edges=None):
+    def __init__(self, points, cells, point_data=None, cell_data=None, field_data=None, point_sets=None, cell_sets=None, gmsh_periodic=None, info=None, normal=None, target_edgelength_boundary=None, target_edgelength_interface=None):
         super().__init__(points, cells, point_data, cell_data, field_data, point_sets, cell_sets, gmsh_periodic, info)
 
         self.vertex_index = None
@@ -67,16 +67,34 @@ class ModifiableMesh(meshio.Mesh):
             normal = [0,0,1]
         self.normal = np.array(normal)
 
-        if target_edgelength is None:
-            elements = self.get_triangles()
-            all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
-            edges = np.unique(all_edges, axis=0)
+        # if target_edgelength is None:
+        #     elements = self.get_triangles()
+        #     all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
+        #     edges = np.unique(all_edges, axis=0)
+        #     length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
+        #     target_edgelength = np.mean(length)
+        # self.target_edgelength = target_edgelength
+        if target_edgelength_boundary is None:
+            edges = np.copy(self.get_lines())
+            valid = np.concatenate([self.boundary_vertices, self.fixed_vertices])
+            edges = edges[np.isin(self.get_lines()[:,0], valid) & np.isin(self.get_lines()[:,1], valid)]
             length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-            target_edgelength = np.mean(length)
-        self.target_edgelength = target_edgelength
+            target_edgelength_boundary = np.mean(length)
+        self.target_edgelength_boundary = target_edgelength_boundary
 
         if target_edgelength_interface is None:
-            self.target_edgelength_interface = target_edgelength
+            try:
+                edges = np.copy(self.get_lines())
+                valid = np.concatenate([self.interface_vertices, self.fixed_vertices])
+                edges = edges[np.isin(self.get_lines()[:,0], valid) & np.isin(self.get_lines()[:,1], valid)]
+                length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
+                target_edgelength_interface = np.mean(length)
+            except:
+                target_edgelength_interface = target_edgelength_boundary
+        self.target_edgelength_interface = target_edgelength_interface
+
+        self.refinement_threshold = 1.6
+        self.coarsen_threshold = 0.7
 
         # if interface_edges is None:
         #   self.interface_edges=[]
@@ -391,13 +409,13 @@ class ModifiableMesh(meshio.Mesh):
             partition = partition[np.argsort(vertex_quality)]
         return partition
 
-    def reconnect(self):
+    def reconnect(self, maxiter=10):
         '''
         Reconnect the mesh using neural networks. Iterated until no further improvement is made.
         '''
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             try:
                 partition = self.connectivity_partition()
             except:
@@ -520,13 +538,13 @@ class ModifiableMesh(meshio.Mesh):
 
         return partition
 
-    def refine(self):
+    def refine(self, maxiter=10):
         '''
         Refine the mesh using neural networks. Iterated until no further improvement is made.
         '''
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             partition, new_points = self.refinement_partition()
             groups = new_points.keys()
             if len(groups) > 1:
@@ -557,19 +575,19 @@ class ModifiableMesh(meshio.Mesh):
             else:
                 accepted = 0
 
-    def refine_boundary(self):
+    def refine_boundary(self, maxiter=10):
         '''
         Refine the boundary of the mesh using neural networks. Iterated until no further improvement is made.
         '''
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             edges = np.copy(self.get_lines())
             valid = np.concatenate([self.boundary_vertices, self.fixed_vertices])
             edges = edges[np.isin(self.get_lines()[:,0], valid) & np.isin(self.get_lines()[:,1], valid)]
 
             length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-            long = length > self.target_edgelength*1.6
+            long = length > self.target_edgelength_boundary * self.refinement_threshold
             edges = edges[long]
             edges = edges[np.argsort(-length[long])]
 
@@ -602,20 +620,18 @@ class ModifiableMesh(meshio.Mesh):
             else:
                 accepted = 0
 
-    def refine_interface(self, target_edgelength_interface=None):
+    def refine_interface(self, maxiter=10):
         '''
         Refine interfaces in the mesh using neural networks. Iterated until no further improvement is made.
         '''
-        if target_edgelength_interface is None:
-            target_edgelength_interface = self.target_edgelength_interface
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             edges = np.copy(self.get_lines())
             edges = edges[np.isin(self.get_lines()[:,0], self.interface_vertices) | np.isin(self.get_lines()[:,1], self.interface_vertices)]
 
             length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-            long = length > target_edgelength_interface*1.6
+            long = length > self.target_edgelength_interface * self.refinement_threshold
             edges = edges[long]
             edges = edges[np.argsort(-length[long])]
 
@@ -733,7 +749,7 @@ class ModifiableMesh(meshio.Mesh):
 
         # edges = np.array([i for i in edges if i not in self.interface_edges])
         length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-        long = length > self.target_edgelength*1.6
+        long = length > self.target_edgelengths(edges) * self.refinement_threshold
         edges = edges[long]
         edges = edges[np.argsort(-length[long])]
 
@@ -770,14 +786,15 @@ class ModifiableMesh(meshio.Mesh):
 
         return partition, new_points
 
-    def coarsen(self):
+    def coarsen(self, maxiter=10):
         '''
         Coarsen the mesh using neural networks. Iterated until no further improvement is made.
         '''
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             self.coarsen_near_boundary_or_interface()
+            print(np.min(self.quality()))
             partition, new_points = self.coarsen_partition()
             groups = new_points.keys()
             if len(groups) > 1:
@@ -821,18 +838,18 @@ class ModifiableMesh(meshio.Mesh):
                 accepted = 0
 
 
-    def coarsen_boundary(self):
+    def coarsen_boundary(self, maxiter=10):
         '''
         Coarsen boundaries in the mesh using neural networks. Iterated until no further improvement is made.
         '''
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             edges = np.copy(self.get_lines())
             edges = edges[np.isin(self.get_lines()[:,0], self.boundary_vertices) & np.isin(self.get_lines()[:,1], self.boundary_vertices)]
 
             length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-            short = length < self.target_edgelength*0.7
+            short = length < self.target_edgelength_boundary * self.coarsen_threshold
             edges = edges[short]
             edges = edges[np.argsort(length[short])]
 
@@ -850,7 +867,6 @@ class ModifiableMesh(meshio.Mesh):
 
                 if accept:
                     self.points = np.delete(self.points, edge, axis=0)
-                    self.boundary_vertices = self.boundary_vertices[np.isin(self.boundary_vertices, edge, invert=True)]
                     elements = np.append(self.get_triangles()[~objects], new, axis=0)
                     for old in edge:
                         edges[edges > old] -= 1
@@ -909,6 +925,7 @@ class ModifiableMesh(meshio.Mesh):
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
         if np.min(new_quality) > 0:
             accept = True
+            self.boundary_vertices = self.boundary_vertices[np.isin(self.boundary_vertices, edge, invert=True)]
             self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
             edge_index = np.any(np.isin(self.get_lines(), edge), axis=1)
             new_lines = self.get_lines()[~edge_index]
@@ -920,20 +937,18 @@ class ModifiableMesh(meshio.Mesh):
 
         return accept, new_elements, objects
 
-    def coarsen_interface(self, target_edgelength_interface=None):
+    def coarsen_interface(self, maxiter=10):
         '''
         Coarsen interfaces in the mesh using neural networks. Iterated until no further improvement is made.
         '''
-        if target_edgelength_interface is None:
-            target_edgelength_interface = self.target_edgelength_interface
         accepted = 1
         iter = 1
-        while accepted > 0:
+        while accepted > 0 and iter <= maxiter:
             edges = np.copy(self.get_lines())
             edges = edges[np.isin(self.get_lines()[:,0], self.interface_vertices) & np.isin(self.get_lines()[:,1], self.interface_vertices)]
 
             length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-            short = length < self.target_edgelength*0.7
+            short = length < self.target_edgelength_interface * self.coarsen_threshold
             edges = edges[short]
             edges = edges[np.argsort(length[short])]
 
@@ -950,8 +965,9 @@ class ModifiableMesh(meshio.Mesh):
                 accept, new, objects = self.coarsen_interface_objects(edge)
 
                 if accept:
+                    print(self.interface_vertices)
+                    print(self.get_lines())
                     self.points = np.delete(self.points, edge, axis=0)
-                    self.interface_vertices = self.interface_vertices[np.isin(self.interface_vertices, edge, invert=True)]
                     elements = np.append(self.get_triangles()[~objects], new, axis=0)
                     for old in edge:
                         edges[edges > old] -= 1
@@ -990,8 +1006,8 @@ class ModifiableMesh(meshio.Mesh):
             contour = contour[::-1]
             index = index[::-1]
 
-        i = np.sort(np.intersect1d(index, self.interface_vertices))
-        iv = np.nonzero(np.isin(index, i))[0]
+        i = np.intersect1d(index, self.interface_vertices)
+        iv = np.sort(np.nonzero(np.isin(index, i))[0])
         i0 = np.append(np.arange(iv[0], iv[1]+1), len(index))
         i1 = np.concatenate([np.arange(iv[1], len(index)), np.arange(iv[0]+1), [len(index)]])
 
@@ -1006,10 +1022,11 @@ class ModifiableMesh(meshio.Mesh):
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
         if np.min(new_quality) > 0:
             accept = True
+            self.interface_vertices = self.interface_vertices[np.isin(self.interface_vertices, edge, invert=True)]
             self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
             edge_index = np.any(np.isin(self.get_lines(), edge), axis=1)
             new_lines = self.get_lines()[~edge_index]
-            new_lines = np.append(new_lines, np.array([[index[-2], new_index], [new_index, index[0]]], dtype=np.int), axis=0)
+            new_lines = np.append(new_lines, np.array([[index[iv[0]], new_index], [new_index, index[iv[1]]]], dtype=np.int), axis=0)
             self.set_lines(new_lines)
         else:
             accept = False
@@ -1033,7 +1050,7 @@ class ModifiableMesh(meshio.Mesh):
 
         # edges = np.array([i for i in edges if  i not in self.interface_edges])
         length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-        short = length < self.target_edgelength*0.7
+        short = length < self.target_edgelengths(edges) * self.coarsen_threshold
         edges = edges[short]
         edges = edges[np.argsort(length[short])]
 
@@ -1079,7 +1096,7 @@ class ModifiableMesh(meshio.Mesh):
         edges = edges[np.logical_and(near_boundary_or_interface, ~on_boundary_or_interface)]
 
         length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
-        short = length < self.target_edgelength*0.7
+        short = length < self.target_edgelengths(edges) * self.coarsen_threshold
         edges = edges[short]
         edges = edges[np.argsort(length[short])]
 
@@ -1088,30 +1105,53 @@ class ModifiableMesh(meshio.Mesh):
             contract_to_vertex = edge[is_boundary_or_interface]
             remove_vertex = edge[~is_boundary_or_interface]
             collapsed = objects_boundary_includes_some(self.get_elements(), 2, *edge)
-            if np.count_nonzero(collapsed) > 0:
+            if np.count_nonzero(collapsed) > 0: ## TODO: use NN to reconnect cavity
                 affected = objects_boundary_includes(self.get_elements(), remove_vertex)
                 objects = self.get_elements()[np.logical_and(affected, ~collapsed)]
-                try:
-                    q = np.min(np.apply_along_axis(self.triangle_quality, 1, objects))
-                except:
-                    continue
+
+                # q = np.min(np.apply_along_axis(self.triangle_quality, 1, objects))
+
                 old_point = np.copy(self.points[remove_vertex])
                 self.points[remove_vertex] = self.points[contract_to_vertex]
-                if np.min(np.apply_along_axis(self.triangle_quality, 1, objects)) < q:
-                    self.points[remove_vertex] = old_point
-                else:
+                if np.min(np.apply_along_axis(self.triangle_quality, 1, objects)) > 0:
                     self.points = np.delete(self.points, remove_vertex, axis=0)
                     self.set_elements(self.get_elements()[~collapsed])
 
-                    remains = np.isin(self.interior_vertices, edge, invert=True)
+                    remains = self.interior_vertices != remove_vertex
                     self.interior_vertices = self.interior_vertices[remains]
                     self.interior_vertices[self.interior_vertices > remove_vertex] -= 1
                     self.interface_vertices[self.interface_vertices > remove_vertex] -= 1
                     self.boundary_vertices[self.boundary_vertices > remove_vertex] -= 1
+                    self.fixed_vertices[self.fixed_vertices > remove_vertex] -= 1
 
                     for cell in self.cells:
                         cell.data[cell.data == remove_vertex] = contract_to_vertex
                         cell.data[cell.data > remove_vertex] -= 1
+                else:
+                    self.points[remove_vertex] = old_point
+
+    def target_edgelengths(self, edges):
+        targets = np.zeros(len(edges))
+        for e, edge in enumerate(edges):
+            triangle_pair = self.find_triangles_with_common_edge(edge)
+            lengths = np.zeros(6)
+            for t, triangle in enumerate(self.get_elements()[triangle_pair]):
+                lengths[3*t:3*(t+1)] = np.linalg.norm(self.points[triangle] - self.points[np.roll(triangle, 1)], axis=1)
+            targets[e] = (np.sum(lengths) - 2*np.linalg.norm(self.points[edge[0]] - self.points[edge[1]])) / 4
+        min_length = min(self.target_edgelength_boundary, self.target_edgelength_interface)
+        max_length = max(self.target_edgelength_boundary, self.target_edgelength_interface)
+        targets = np.clip(targets, min_length, max_length)
+        # if len(self.interface_vertices) > 0:
+        #     midpoints = (self.points[edges[:,0]] + self.points[edges[:,1]]) / 2
+        #     from_boundary = midpoints[:,None,:] - self.points[self.boundary_vertices][None,:,:]
+        #     min_from_boundary = np.min(np.linalg.norm(from_boundary, axis=2), axis=1)
+        #     from_interface = midpoints[:,None,:] - self.points[self.interface_vertices][None,:,:]
+        #     min_from_interface = np.min(np.linalg.norm(from_interface, axis=2), axis=1)
+        #     proportion = min_from_boundary / (min_from_boundary + min_from_interface)
+        #     targets = self.target_edgelength_boundary * (1 - proportion) + self.target_edgelength_interface * proportion
+        # else:
+        #     targets = self.target_edgelength_boundary * np.ones(len(edges))
+        return targets
 
     def translate_vertex(self, vertex, translation, check_injectivity=True, project_inwards=False):
         '''

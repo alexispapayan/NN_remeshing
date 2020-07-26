@@ -28,7 +28,8 @@ if __name__=='__main__':
     #         element[0],element[1]=element[1],element[0]
     #
     #
-    # mesh.interface_vertices=np.append(mesh.interface_vertices,4)
+    mesh.interface_vertices=np.append(mesh.interface_vertices, [4, 5, 6, 7, 8])
+    mesh.fixed_vertices = np.array([0,1,2,3], dtype=np.int)
     # mymesh.write('meshes/zalesak_disc.vtk',mesh)
 
     plt.ion()
@@ -36,8 +37,17 @@ if __name__=='__main__':
     plt.draw()
     if input() != '':
         sys.exit()
+
+    mesh.coarsen(1)
+
+    plt.clf()
+    mesh.plot_quality(True)
+    plt.draw()
+    if input() != '':
+        sys.exit()
     i=0
-    # plt.savefig('meshes/animations/zalesak_disc/zalesak_disc{:02}'.format(i))
+
+    # plt.savefig('animations/zalesak_disc/zalesak_disc{:02}'.format(i))
 
 
     origin=np.array([2,2])
@@ -58,10 +68,10 @@ if __name__=='__main__':
 
          for vertex in mesh.interface_vertices:
              mesh.points[vertex][:2]=Rotate2D(mesh.points[vertex][:2], origin,angular_speed)
-         for vertex in vertices_around_interface:
-             mesh.points[vertex][:2]=Rotate2D(mesh.points[vertex][:2], origin,angular_speed)
+         # for vertex in vertices_around_interface:
+         #     mesh.points[vertex][:2]=Rotate2D(mesh.points[vertex][:2], origin,angular_speed)
 
-         center=Rotate2D(center, origin,angular_speed)
+         center = Rotate2D(center, origin, angular_speed)
 
          vertices_around_interface=[]
          for vertex in mesh.interior_vertices:
@@ -69,8 +79,8 @@ if __name__=='__main__':
                  vertices_around_interface.append(vertex)
          vertices_around_interface=np.array(vertices_around_interface)
 
-         #mesh.refine()
-         #mesh.coarsen()
+         mesh.refine()
+         mesh.coarsen()
          mesh.reconnect()
          mesh.smooth_boundary()
          mesh.smooth()
@@ -81,8 +91,8 @@ if __name__=='__main__':
          mesh.plot_quality(True)
          plt.draw()
          if input() != '':
-             sys.exit()
+             break
          # plt.axis([0,1,0,1])
          # plt.plot(mesh.points[mesh.boundary_vertices][:,0],mesh.points[mesh.boundary_vertices][:,1])
          angular_degree+=0.05
-         # plt.savefig('meshes/animations/zalesak_disc/zalesak_disc{:02}'.format(i))
+         # plt.savefig('animations/zalesak_disc/zalesak_disc{:02}'.format(i))
