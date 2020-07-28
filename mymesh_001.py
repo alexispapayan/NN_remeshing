@@ -269,8 +269,14 @@ class ModifiableMesh(meshio.Mesh):
         if np.count_nonzero(objects) == 1:
             return False
 
-
-        contour, index = self.get_open_contour(objects, vertex)
+        try:
+            contour, index = self.get_open_contour(objects, vertex)
+        except:
+            print(vertex, self.get_triangles()[objects])
+            plt.clf()
+            self.plot_quality(True)
+            plt.savefig('error.png')
+            raise ValueError
         if len(contour) < 3:
             return False
         contour = contour[:,:2] # 2D only !
@@ -714,8 +720,9 @@ class ModifiableMesh(meshio.Mesh):
             while not np.all(np.isin(triangle[:2], edge)):
                 triangle = np.roll(triangle, 1)
             index = np.concatenate([triangle[:1], [len(self.points)-1], triangle[1:]])
-            contour = self.points[index][:,:2]
-            new = retriangulate(contour)
+            # contour = self.points[index][:,:2]
+            # new = retriangulate(contour)
+            new = np.array([[1,2,3], [0,1,3]], dtype=np.int)
             if len(new_elements) == 0:
                 new_elements = np.take(index, new)
             else:
@@ -794,7 +801,6 @@ class ModifiableMesh(meshio.Mesh):
         iter = 1
         while accepted > 0 and iter <= maxiter:
             self.coarsen_near_boundary_or_interface()
-            print(np.min(self.quality()))
             partition, new_points = self.coarsen_partition()
             groups = new_points.keys()
             if len(groups) > 1:
@@ -1105,17 +1111,20 @@ class ModifiableMesh(meshio.Mesh):
             contract_to_vertex = edge[is_boundary_or_interface]
             remove_vertex = edge[~is_boundary_or_interface]
             collapsed = objects_boundary_includes_some(self.get_elements(), 2, *edge)
-            if np.count_nonzero(collapsed) > 0: ## TODO: use NN to reconnect cavity
-                affected = objects_boundary_includes(self.get_elements(), remove_vertex)
-                objects = self.get_elements()[np.logical_and(affected, ~collapsed)]
 
-                # q = np.min(np.apply_along_axis(self.triangle_quality, 1, objects))
+            if np.count_nonzero(collapsed) > 0:
+                affected = objects_boundary_includes(self.get_elements(), remove_vertex)
 
                 old_point = np.copy(self.points[remove_vertex])
-                self.points[remove_vertex] = self.points[contract_to_vertex]
-                if np.min(np.apply_along_axis(self.triangle_quality, 1, objects)) > 0:
+                # self.points[remove_vertex] = self.points[contract_to_vertex]
+
+                # something broken here!
+                accept, new = self.reconnect_objects(affected)
+                # objects = self.get_elements()[np.logical_and(affected, ~collapsed)]
+
+                if accept:
                     self.points = np.delete(self.points, remove_vertex, axis=0)
-                    self.set_elements(self.get_elements()[~collapsed])
+                    self.set_elements(np.append(self.get_elements()[~affected], new, axis=0))
 
                     remains = self.interior_vertices != remove_vertex
                     self.interior_vertices = self.interior_vertices[remains]
@@ -1125,7 +1134,7 @@ class ModifiableMesh(meshio.Mesh):
                     self.fixed_vertices[self.fixed_vertices > remove_vertex] -= 1
 
                     for cell in self.cells:
-                        cell.data[cell.data == remove_vertex] = contract_to_vertex
+                        # cell.data[cell.data == remove_vertex] = contract_to_vertex
                         cell.data[cell.data > remove_vertex] -= 1
                 else:
                     self.points[remove_vertex] = old_point
@@ -1207,6 +1216,7 @@ class ModifiableMesh(meshio.Mesh):
                         else:
                             raise ValueError('Mesh is no longer injective')
             self.points[vertex] = new_vertex
+
     def contract_edge(self, contract_to_vertex, remove_vertex):
         '''
         Contract an edge. The vertex that remains is contract_to_vertex. Works for surface and volume meshes.
