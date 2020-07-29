@@ -1095,9 +1095,10 @@ class ModifiableMesh(meshio.Mesh):
         all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
         edges = np.unique(all_edges, axis=0)
 
-        boundary_or_interface = np.concatenate([self.boundary_vertices, self.interface_vertices])
+        boundary_or_interface = np.concatenate([self.fixed_vertices, self.boundary_vertices, self.interface_vertices])
         near_boundary_or_interface = objects_boundary_includes_some(edges, 1, *boundary_or_interface)
-        on_boundary_or_interface = (np.isin(edges[:,0], self.get_lines()[:,0]) & np.isin(edges[:,1], self.get_lines()[:,1])) | (np.isin(edges[:,0], self.get_lines()[:,1]) & np.isin(edges[:,1], self.get_lines()[:,0]))
+        # on_boundary_or_interface = (np.isin(edges[:,0], self.get_lines()[:,0]) & np.isin(edges[:,1], self.get_lines()[:,1])) | (np.isin(edges[:,0], self.get_lines()[:,1]) & np.isin(edges[:,1], self.get_lines()[:,0]))
+        on_boundary_or_interface = objects_boundary_includes_some(edges, 2, *boundary_or_interface)
 
         edges = edges[np.logical_and(near_boundary_or_interface, ~on_boundary_or_interface)]
 
@@ -1108,6 +1109,9 @@ class ModifiableMesh(meshio.Mesh):
 
         for edge in edges:
             is_boundary_or_interface = np.isin(edge, boundary_or_interface)
+            if np.count_nonzero(is_boundary_or_interface) != 1:
+                print(edge)
+                raise ValueError('Cannot coarsen this edge')
             contract_to_vertex = edge[is_boundary_or_interface]
             remove_vertex = edge[~is_boundary_or_interface]
             collapsed = objects_boundary_includes_some(self.get_elements(), 2, *edge)
@@ -1115,7 +1119,7 @@ class ModifiableMesh(meshio.Mesh):
             if np.count_nonzero(collapsed) > 0:
                 affected = objects_boundary_includes(self.get_elements(), remove_vertex)
 
-                old_point = np.copy(self.points[remove_vertex])
+                # old_point = np.copy(self.points[remove_vertex])
                 # self.points[remove_vertex] = self.points[contract_to_vertex]
 
                 # something broken here!
@@ -1124,8 +1128,10 @@ class ModifiableMesh(meshio.Mesh):
 
                 if accept:
                     self.points = np.delete(self.points, remove_vertex, axis=0)
-                    self.set_elements(np.append(self.get_elements()[~affected], new, axis=0))
+                    self.set_triangles(np.append(self.get_triangles()[~affected], new, axis=0))
 
+                    edges = edges[~np.any(edges == remove_vertex, axis=1)]
+                    edges[edges > remove_vertex] -= 1
                     remains = self.interior_vertices != remove_vertex
                     self.interior_vertices = self.interior_vertices[remains]
                     self.interior_vertices[self.interior_vertices > remove_vertex] -= 1
@@ -1136,8 +1142,8 @@ class ModifiableMesh(meshio.Mesh):
                     for cell in self.cells:
                         # cell.data[cell.data == remove_vertex] = contract_to_vertex
                         cell.data[cell.data > remove_vertex] -= 1
-                else:
-                    self.points[remove_vertex] = old_point
+                # else:
+                #     self.points = np.insert(self.points, remove_vertex, old_point, axis=0)
 
     def target_edgelengths(self, edges):
         targets = np.zeros(len(edges))
