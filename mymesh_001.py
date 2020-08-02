@@ -59,9 +59,9 @@ class ModifiableMesh(meshio.Mesh):
                continue
             interior[vertex] = vertex not in index
 
-        self.interior_vertices = np.nonzero(np.logical_and(~boundary, interior))[0]
-        self.boundary_vertices = np.nonzero(np.logical_and(boundary, ~interior))[0]
-        self.interface_vertices = np.nonzero(np.logical_and(boundary, interior))[0]
+        self.interior_vertices = np.setdiff1d(np.nonzero(~boundary & interior)[0], self.fixed_vertices)
+        self.boundary_vertices = np.setdiff1d(np.nonzero(boundary & ~interior)[0], self.fixed_vertices)
+        self.interface_vertices = np.setdiff1d(np.nonzero(boundary & interior)[0], self.fixed_vertices)
 
         if normal is None:
             normal = [0,0,1]
@@ -269,15 +269,10 @@ class ModifiableMesh(meshio.Mesh):
         if np.count_nonzero(objects) == 1:
             return False
 
-        try:
-            contour, index = self.get_open_contour(objects, vertex)
-        except:
-            print(vertex, self.get_triangles()[objects])
-            plt.clf()
-            self.plot_quality(True)
-            plt.savefig('error.png')
-            raise ValueError
+        contour, index = self.get_open_contour(objects, vertex)
         if len(contour) < 3:
+            return False
+        if len(contour) > 6:
             return False
         contour = contour[:,:2] # 2D only !
 
@@ -464,6 +459,10 @@ class ModifiableMesh(meshio.Mesh):
         quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
         q = np.min(quality)
         contour, index, _ = self.get_contour(objects)
+
+        if len(index) > 10:
+            return False, objects
+
         contour = contour[:-1,:2] # 2D only !
         index = index[:-1]
         rolled = np.roll(contour, 1, axis=0)
@@ -471,6 +470,9 @@ class ModifiableMesh(meshio.Mesh):
         if contour_direction < 0:
             contour = contour[::-1]
             index = index[::-1]
+
+        if len(index) == 3:
+            return True, index[None,:]
 
         new = retriangulate(contour)
 
@@ -561,9 +563,11 @@ class ModifiableMesh(meshio.Mesh):
                     if g >= 0:
                         objects = partition == g
                         if np.count_nonzero(objects) > 1:
-                            accept, new, _ = self.refine_objects(objects, new_points[g])
+                            accept, new, interior = self.refine_objects(objects, new_points[g])
+                            if len(interior) > 0:
+                                raise ValueError('Points to be deleted during refinement')
                             if accept:
-                                keep_elements = np.logical_and(~objects, keep_elements)
+                                keep_elements = keep_elements & ~objects
                                 try:
                                     new_elements = np.append(new_elements, new, axis=0)
                                 except:
@@ -696,8 +700,16 @@ class ModifiableMesh(meshio.Mesh):
         index = np.append(index, new_index)
 
         new = retriangulate_with_interior(contour, *new_points[:,:2])
-
         new_elements = np.take(index, new)
+        # print(new_elements)
+
+        # plt.clf()
+        # for e in new_elements:
+        #     plt.fill(self.points[e][:,0], self.points[e][:,1], ec='black', fc='white', alpha=0.8)
+        # plt.scatter(contour[:,0], contour[:,1])
+        # plt.scatter(new_points[:,0], new_points[:,1])
+        # plt.show()
+
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
         if np.min(new_quality) > 0:
             accepted = True
@@ -1096,54 +1108,77 @@ class ModifiableMesh(meshio.Mesh):
         edges = np.unique(all_edges, axis=0)
 
         boundary_or_interface = np.concatenate([self.fixed_vertices, self.boundary_vertices, self.interface_vertices])
-        near_boundary_or_interface = objects_boundary_includes_some(edges, 1, *boundary_or_interface)
+        # near_boundary_or_interface = objects_boundary_includes_some(edges, 1, *boundary_or_interface)
         # on_boundary_or_interface = (np.isin(edges[:,0], self.get_lines()[:,0]) & np.isin(edges[:,1], self.get_lines()[:,1])) | (np.isin(edges[:,0], self.get_lines()[:,1]) & np.isin(edges[:,1], self.get_lines()[:,0]))
-        on_boundary_or_interface = objects_boundary_includes_some(edges, 2, *boundary_or_interface)
+        # on_boundary_or_interface = objects_boundary_includes_some(edges, 2, *boundary_or_interface)
 
-        edges = edges[np.logical_and(near_boundary_or_interface, ~on_boundary_or_interface)]
+        valid = np.sum(np.isin(edges, boundary_or_interface), axis=1) == 1
+        edges = edges[valid]
 
         length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
         short = length < self.target_edgelengths(edges) * self.coarsen_threshold
         edges = edges[short]
         edges = edges[np.argsort(length[short])]
 
+        e = 0
+        while e < len(edges)-1:
+            is_boundary_or_interface = np.isin(edges[e], boundary_or_interface)
+            remove = edges[e][is_boundary_or_interface]
+            unique = np.all(edges != remove, axis=1)
+            unique[:e] = True
+            edges = edges[unique]
+            e += 1
+
         for edge in edges:
             is_boundary_or_interface = np.isin(edge, boundary_or_interface)
             if np.count_nonzero(is_boundary_or_interface) != 1:
-                print(edge)
-                raise ValueError('Cannot coarsen this edge')
+                raise ValueError('Cannot coarsen this edge:', edge)
             contract_to_vertex = edge[is_boundary_or_interface]
             remove_vertex = edge[~is_boundary_or_interface]
-            collapsed = objects_boundary_includes_some(self.get_elements(), 2, *edge)
+            # collapsed = objects_boundary_includes_some(self.get_elements(), 2, *edge)
 
-            if np.count_nonzero(collapsed) > 0:
-                affected = objects_boundary_includes(self.get_elements(), remove_vertex)
+            # if np.count_nonzero(collapsed) > 0:
+            affected = objects_boundary_includes(self.get_elements(), remove_vertex)
+            if np.count_nonzero(affected) < 2:
+                raise ValueError('Orphaned edge')
 
-                # old_point = np.copy(self.points[remove_vertex])
-                # self.points[remove_vertex] = self.points[contract_to_vertex]
+            # old_point = np.copy(self.points[remove_vertex])
+            # self.points[remove_vertex] = self.points[contract_to_vertex]
 
-                # something broken here!
-                accept, new = self.reconnect_objects(affected)
-                # objects = self.get_elements()[np.logical_and(affected, ~collapsed)]
+            # contour, index, interior = self.get_contour(affected)
+            # if len(interior) != 1:
+            #     print(self.get_triangles()[affected])
+            #     print(index[:-1])
+            #     print(remove_vertex, interior)
+            #     print(remove_vertex in self.boundary_vertices)
+            #     raise ValueError('Vertex to be removed not in interior')
+            accept, new = self.reconnect_objects(affected)
+            # objects = self.get_elements()[np.logical_and(affected, ~collapsed)]
 
-                if accept:
-                    self.points = np.delete(self.points, remove_vertex, axis=0)
-                    self.set_triangles(np.append(self.get_triangles()[~affected], new, axis=0))
+            if accept:
+                self.points = np.delete(self.points, remove_vertex, axis=0)
+                self.set_elements(np.append(self.get_elements()[~affected], new, axis=0))
 
-                    edges = edges[~np.any(edges == remove_vertex, axis=1)]
-                    edges[edges > remove_vertex] -= 1
-                    remains = self.interior_vertices != remove_vertex
-                    self.interior_vertices = self.interior_vertices[remains]
-                    self.interior_vertices[self.interior_vertices > remove_vertex] -= 1
-                    self.interface_vertices[self.interface_vertices > remove_vertex] -= 1
-                    self.boundary_vertices[self.boundary_vertices > remove_vertex] -= 1
-                    self.fixed_vertices[self.fixed_vertices > remove_vertex] -= 1
+                if np.count_nonzero(objects_boundary_includes(self.get_elements(), remove_vertex)) > 0:
+                    print(remove_vertex, new)
+                    raise ValueError('Elements not removed')
 
-                    for cell in self.cells:
-                        # cell.data[cell.data == remove_vertex] = contract_to_vertex
-                        cell.data[cell.data > remove_vertex] -= 1
-                # else:
-                #     self.points = np.insert(self.points, remove_vertex, old_point, axis=0)
+                edges[edges > remove_vertex] -= 1
+                remains = self.interior_vertices != remove_vertex
+                if np.count_nonzero(~remains) > 1:
+                    raise ValueError('Repeated interior vertex')
+                self.interior_vertices = self.interior_vertices[remains]
+                self.interior_vertices[self.interior_vertices > remove_vertex] -= 1
+                self.interface_vertices[self.interface_vertices > remove_vertex] -= 1
+                self.boundary_vertices[self.boundary_vertices > remove_vertex] -= 1
+                self.fixed_vertices[self.fixed_vertices > remove_vertex] -= 1
+                boundary_or_interface = np.concatenate([self.fixed_vertices, self.boundary_vertices, self.interface_vertices])
+
+                for cell in self.cells:
+                    # cell.data[cell.data == remove_vertex] = contract_to_vertex
+                    cell.data[cell.data > remove_vertex] -= 1
+            # else:
+            #     self.points = np.insert(self.points, remove_vertex, old_point, axis=0)
 
     def target_edgelengths(self, edges):
         targets = np.zeros(len(edges))
@@ -1151,6 +1186,10 @@ class ModifiableMesh(meshio.Mesh):
             triangle_pair = self.find_triangles_with_common_edge(edge)
             lengths = np.zeros(6)
             for t, triangle in enumerate(self.get_elements()[triangle_pair]):
+                if t > 1:
+                    print(edge)
+                    print(self.get_elements()[triangle_pair])
+                    raise ValueError('Edge belongs to more than 2 triangles')
                 lengths[3*t:3*(t+1)] = np.linalg.norm(self.points[triangle] - self.points[np.roll(triangle, 1)], axis=1)
             targets[e] = (np.sum(lengths) - 2*np.linalg.norm(self.points[edge[0]] - self.points[edge[1]])) / 4
         min_length = min(self.target_edgelength_boundary, self.target_edgelength_interface)

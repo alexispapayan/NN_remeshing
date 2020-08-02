@@ -28,37 +28,29 @@ if __name__=='__main__':
     #         element[0],element[1]=element[1],element[0]
     #
     #
-    mesh.interface_vertices=np.append(mesh.interface_vertices, [4, 5, 6, 7, 8])
+    mesh.interface_vertices = np.append(mesh.interface_vertices, [4, 5, 6, 7, 8])
     mesh.fixed_vertices = np.array([0,1,2,3], dtype=np.int)
     # mymesh.write('meshes/zalesak_disc.vtk',mesh)
 
-    plt.ion()
+    # plt.ion()
     mesh.plot_quality(True)
-    plt.draw()
-    if input() != '':
-        sys.exit()
-
-    mesh.coarsen(1)
-
-    plt.clf()
-    mesh.plot_quality(True)
-    plt.draw()
-    if input() != '':
-        sys.exit()
+    # plt.draw()
+    # if input() != '':
+    #     sys.exit()
     i=0
 
-    # plt.savefig('animations/zalesak_disc/zalesak_disc{:02}'.format(i))
+    plt.savefig('animations/zalesak_disc/zalesak_disc{:02}'.format(i))
 
 
     origin=np.array([2,2])
     angular_speed=0.05
     angular_degree=0
-    center=[2.0,2.75]
-    vertices_around_interface=[]
-    for vertex in mesh.interior_vertices:
-        if np.linalg.norm(mesh.points[vertex][:2]-center)<0.6:
-            vertices_around_interface.append(vertex)
-    vertices_around_interface=np.array(vertices_around_interface)
+    center=np.array([2.0,2.75])
+    # vertices_around_interface=[]
+    # for vertex in mesh.interior_vertices:
+    #     if np.linalg.norm(mesh.points[vertex][:2]-center)<0.6:
+    #         vertices_around_interface.append(vertex)
+    # vertices_around_interface=np.array(vertices_around_interface)
 
 
     while(angular_degree<2*np.pi):
@@ -66,33 +58,42 @@ if __name__=='__main__':
 
          plt.clf()
 
-         for vertex in mesh.interface_vertices:
-             mesh.points[vertex][:2]=Rotate2D(mesh.points[vertex][:2], origin,angular_speed)
-         # for vertex in vertices_around_interface:
-         #     mesh.points[vertex][:2]=Rotate2D(mesh.points[vertex][:2], origin,angular_speed)
-
-         center = Rotate2D(center, origin, angular_speed)
-
          vertices_around_interface=[]
          for vertex in mesh.interior_vertices:
              if np.linalg.norm(mesh.points[vertex][:2]-center)<0.6:
                  vertices_around_interface.append(vertex)
          vertices_around_interface=np.array(vertices_around_interface)
 
+         for vertex in mesh.interface_vertices:
+             mesh.points[vertex,:2]=Rotate2D(mesh.points[vertex,:2], origin, angular_speed)
+         for vertex in vertices_around_interface:
+             mesh.points[vertex,:2]=Rotate2D(mesh.points[vertex,:2], origin,angular_speed)
+
+         center = Rotate2D(center, origin, angular_speed)
+
+         # print(len(np.intersect1d(mesh.interface_vertices, mesh.interior_vertices)))
          mesh.refine()
+
+         # plt.clf()
+         # mesh.plot_quality(True)
+         # plt.show()
+
          mesh.coarsen()
+
          mesh.reconnect()
          mesh.smooth_boundary()
-         mesh.smooth()
+         # mesh.smooth()
 
          mesh.smooth_interface()
 
          plt.clf()
          mesh.plot_quality(True)
-         plt.draw()
-         if input() != '':
-             break
+         # plt.draw()
+         # if input() != '':
+         #     break
          # plt.axis([0,1,0,1])
          # plt.plot(mesh.points[mesh.boundary_vertices][:,0],mesh.points[mesh.boundary_vertices][:,1])
          angular_degree+=0.05
-         # plt.savefig('animations/zalesak_disc/zalesak_disc{:02}'.format(i))
+         plt.savefig('animations/zalesak_disc/zalesak_disc{:02}'.format(i))
+
+         # mesh.write('test.vtk')

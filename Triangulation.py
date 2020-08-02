@@ -127,11 +127,16 @@ def retriangulate(contour):
 
             table = table[0].numpy().reshape([sub.shape[0], sub.shape[0]])
 
-            ordered_triangles = order_triangles(contour, table)
+            ordered_triangles = order_triangles(sub, table)
 
-            chosen, sub_cavities = triangulate2(sub_procrustes, cavity, ordered_triangles)
-            new_elements = np.append(new_elements, ordered_triangles[chosen], axis=0)
-            cavities += sub_cavities
+            chosen, sub_cavities = triangulate2(sub_procrustes, np.arange(len(contour)), ordered_triangles)
+            new_elements = np.append(new_elements, np.take(cavity, ordered_triangles[chosen]), axis=0)
+            cavities += np.take(cavity, sub_cavities)
+
+    # plt.scatter(contour[:,0], contour[:,1])
+    # for element in new_elements:
+    #     plt.fill(contour[element][:,0], contour[element][:,1], fc='white', ec='black', alpha=0.8)
+    # plt.show()
 
     return new_elements
 
@@ -1304,7 +1309,7 @@ def check_edge_validity(edge,polygon,set_edges,interior_edges):
             break
     return found_in_interior_set,found_in_set,occuring_index
 
-def triangulate(polygon,ordered_quality_matrix,recursive=True):
+def triangulate(polygon,ordered_quality_matrix,recursive=True, plot_mesh=False):
     set_edges=set(tuple(i) for i in get_contour_edges(polygon))
     interior_edges=set()
     set_elements=set()
@@ -1461,10 +1466,11 @@ def triangulate(polygon,ordered_quality_matrix,recursive=True):
 
     triangulated={'segment_markers': np.ones([polygon.shape[0]]), 'segments':np.array(get_contour_edges(polygon)), 'triangles': np.array(list( list(i) for i in set_elements)),
                   'vertex_markers': np.ones([polygon.shape[0]]), 'vertices': polygon}
-    # plot.plot(plt.axes(), **triangulated)
-    # print("Final edges:",set_edges)
-    # print("Elements created:",set_elements)
-    # print("Set of locked vertices:", set_locked_vertices)
+    if plot_mesh:
+        plot(plt.axes(), **triangulated)
+        print("Final edges:",set_edges)
+        print("Elements created:",set_elements)
+        print("Set of locked vertices:", set_locked_vertices)
 
 
     # find open vertices

@@ -13,7 +13,6 @@ import triangle as tri
 import triangle.plot as plot
 import Triangulation
 
-
 from scipy.spatial import ConvexHull
 from matplotlib.path import Path
 from sklearn  import manifold
@@ -114,19 +113,48 @@ def retriangulate_with_interior(contour, *args):
     procrustes = procrustes_transform(contour)
     inner = procrustes_transform(np.array(args))
     input = torch.tensor(np.concatenate([np.asarray(np.append(procrustes, procrustes[0][None,:], axis=0), dtype=np.float32), np.asarray(inner, dtype=np.float32)], axis=0)[None,None,:,:])
+
     # with open('contour.pkl', 'wb') as file:
-    #     pickle.dump(input, file)
-    table = net(input)
+    #     pickle.dump(np.concatenate([contour, np.array(args)], axis=0), file)
 
-    table = table[0].numpy().reshape([contour.shape[0], contour.shape[0]+len(args)])
+    # table = net(input)
+    # table = table[0].numpy().reshape([contour.shape[0], contour.shape[0]+len(args)])
 
-    # table,_=quality_matrix(procrustes,inner)
+    table,_=quality_matrix(procrustes, inner)
 
-    ordered_matrix = order_quality_matrix(table, procrustes, np.concatenate([procrustes, inner], axis=0))
-    new_elements, sub_elements = triangulate(procrustes, inner, ordered_matrix, recursive=True)
+    ordered_matrix = order_quality_matrix(table, procrustes, np.vstack([procrustes, inner]), check_for_equal=False)
+    new_elements, sub_elements = triangulate(procrustes, inner, ordered_matrix, recursive=True, plot_mesh=False)
+
+    # if len(sub_elements) > 0 and len(new_elements) > 2:
+    #     print(new_elements, sub_elements)
+    #     plt.show()
+    #
+    #
+    #     table,_=quality_matrix(procrustes, inner)
+    #     ordered_matrix = order_quality_matrix(table, procrustes, np.vstack([procrustes, inner]), check_for_equal=False)
+    #     new_elements, sub_elements = triangulate(procrustes, inner, ordered_matrix, recursive=True, plot_mesh=True)
+
     # print(new_elements, sub_elements)
 
-    return np.array(list(new_elements) + sub_elements, dtype=np.int)
+    # plt.clf()
+    # pts = np.vstack([contour, args])
+    # for e in new_elements:
+    #     e = list(e)
+    #     plt.fill(pts[e][:,0], pts[e][:,1], ec='black', fc='white', alpha=0.8)
+    # plt.scatter(contour[:,0], contour[:,1])
+    # for a in args:
+    #     plt.scatter(a[0], a[1])
+    # plt.show()
+
+    new_elements = list(new_elements)
+    # flattened = [t[i] for i in range(3) for t in sub_elements]
+    # for e, element in enumerate(new_elements):
+    #     if element[0] in flattened and element[1] in flattened and element[2] in flattened:
+    #         del new_elements[e]
+
+    # print(new_elements + sub_elements)
+
+    return np.array(new_elements + sub_elements, dtype=np.int)
 
 def simple_retriangulate(contour, *args):
     if len(args) == 0:
@@ -137,8 +165,6 @@ def simple_retriangulate(contour, *args):
         n = len(contour)
         triangles = np.array([[i, (i+1) % n, n] for i in range(n)])
         return triangles
-
-# In[3]:
 
 def BCE_accuracy(model,variable,labels):
     net.eval()
@@ -1894,7 +1920,6 @@ def triangulate(polygon,points,ordered_quality_matrix,recursive=True,plot_mesh=F
 
 
 
-
     if plot_mesh:
         triangulated={'segment_markers': np.ones([polygon.shape[0]+points.shape[0]]), 'segments':np.array(get_contour_edges(polygon)), 'triangles': np.array(list( list(i) for i in set_elements)),
                       'vertex_markers': np.ones([polygon.shape[0]+points.shape[0]]), 'vertices':np.vstack([ polygon,points])}
@@ -1978,7 +2003,7 @@ def triangulate(polygon,points,ordered_quality_matrix,recursive=True,plot_mesh=F
                     sub_order_matrix=Triangulation.order_quality_matrix(sub_quality,sub_polygon,check_for_equal=True)
 
                     # print(sub_quality,sub_order_matrix)
-                    sub_elements,_,_=Triangulation.triangulate(sub_polygon,sub_order_matrix,recursive=True)
+                    sub_elements,_,_=Triangulation.triangulate(sub_polygon,sub_order_matrix,recursive=True, plot_mesh=plot_mesh)
                     if len(sub_elements)!=0:
                         for element in sub_elements:
                             indices=np.asarray(element)
@@ -2454,7 +2479,6 @@ def triangulate_NN(polygon,points,ordered_quality_matrix,recursive=True,plot_mes
 
 
 
-
         if len(sub_polygon_list)==0:
             return set_elements,[]
 
@@ -2473,6 +2497,7 @@ def triangulate_NN(polygon,points,ordered_quality_matrix,recursive=True,plot_mes
 
                     # print(sub_quality,sub_order_matrix)
                     sub_elements,_=Triangulation.triangulate(sub_polygon,sub_order_matrix,recursive=True)
+                    # print(sub_elements)
                     if len(sub_elements)!=0:
                         for element in sub_elements:
                             indices=np.asarray(element)
@@ -3118,7 +3143,7 @@ def order_quality_matrix(_quality_matrix,_polygon,_polygon_with_inner_points, ch
     for keys,values in quality_board.items():
         listing.append([keys,max(values[:,0])])
 
-    listing=np.array(listing)
+    listing=np.array(listing, dtype='object')
     listing=listing[np.lexsort(np.transpose(listing)[::-3]).T]
     listing=listing[::-1]
     ordered_indices=listing[:,0]
