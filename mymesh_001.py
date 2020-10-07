@@ -37,7 +37,7 @@ class ModifiableMesh(meshio.Mesh):
             self.dimension = 1
 
         try:
-            self.fixed_vertices = self.get_vertices().reshape(-1)
+            self.fixed_vertices = self.get_nodes().reshape(-1)
         except TypeError:
             self.fixed_vertices = np.array([], dtype=np.int)
 
@@ -100,11 +100,14 @@ class ModifiableMesh(meshio.Mesh):
         #   self.interface_edges=[]
         self.generator = np.random.Generator(np.random.PCG64())
 
-    def get_vertices(self):
+    def get_nodes(self):
         if self.vertex_index is None:
             return None
         else:
             return self.cells[self.vertex_index].data
+
+    def set_nodes(self, nodes):
+        self.cells[self.vertex_index] = self.cells[self.vertex_index]._replace(data=nodes)
 
     def get_lines(self):
         if self.line_index is None:
@@ -682,8 +685,8 @@ class ModifiableMesh(meshio.Mesh):
         self.points = np.append(self.points, new_points, axis=0)
         self.interior_vertices = np.append(self.interior_vertices, new_index)
 
-        # quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
-        # q = np.min(quality)
+        quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
+        q = np.min(quality)
         try:
             contour, index, interior = self.get_contour(objects)
         except ValueError:
@@ -711,7 +714,7 @@ class ModifiableMesh(meshio.Mesh):
         # plt.show()
 
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
-        if np.min(new_quality) > 0:
+        if np.min(new_quality) > q:
             accepted = True
         else:
             accepted = False
@@ -725,8 +728,9 @@ class ModifiableMesh(meshio.Mesh):
         objects = objects_boundary_includes_some(self.get_triangles(), 2, *edge)
         self.points = np.append(self.points, new_point, axis=0)
 
-        # quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
-        # q = np.min(quality)
+        print(len(self.get_triangles()[objects]))
+        quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles()[objects])
+        q = np.min(quality)
         new_elements = []
         for triangle in self.get_triangles()[objects]:
             while not np.all(np.isin(triangle[:2], edge)):
@@ -741,7 +745,7 @@ class ModifiableMesh(meshio.Mesh):
                 new_elements = np.append(new_elements, np.take(index, new), axis=0)
 
         new_quality = np.apply_along_axis(self.triangle_quality, 1, new_elements)
-        if np.min(new_quality) > 0:
+        if np.min(new_quality) > q:
             accept = True
         else:
             accept = False
@@ -812,7 +816,7 @@ class ModifiableMesh(meshio.Mesh):
         accepted = 1
         iter = 1
         while accepted > 0 and iter <= maxiter:
-            self.coarsen_near_boundary_or_interface()
+            # self.coarsen_near_boundary_or_interface()
             partition, new_points = self.coarsen_partition()
             groups = new_points.keys()
             if len(groups) > 1:
@@ -823,25 +827,33 @@ class ModifiableMesh(meshio.Mesh):
                     if g >= 0:
                         objects = partition == g
                         if np.count_nonzero(objects) > 1:
-                            accept, new, remove = self.refine_objects(objects, new_points[g])
+                            accept, new, remove = self.refine_objects(objects, new_points[g]['coords'])
                             if accept:
                                 keep_elements = np.logical_and(~objects, keep_elements)
                                 try:
                                     new_elements = np.append(new_elements, new, axis=0)
                                 except:
                                     new_elements = new
-                                self.points = np.delete(self.points, remove, axis=0)
+                                # self.points = np.delete(self.points, remove, axis=0)
                                 remains = np.isin(self.interior_vertices, remove, invert=True)
                                 self.interior_vertices = self.interior_vertices[remains]
                                 for old in remove:
-                                    remove[remove > old] -= 1
-                                    new_elements[new_elements > old] -= 1
-                                    self.interior_vertices[self.interior_vertices > old] -= 1
-                                    self.interface_vertices[self.interface_vertices > old] -= 1
-                                    self.boundary_vertices[self.boundary_vertices > old] -= 1
-                                    self.fixed_vertices[self.fixed_vertices > old] -= 1
-                                    for cell in self.cells:
-                                        cell.data[cell.data > old] -= 1
+                                    if old in np.concatenate([self.fixed_vertices, self.boundary_vertices, self.interface_vertices]):
+                                        replacement = np.nonzero(np.any(new_points[g]['old'] == old, axis=1))[0] - new_points[g]['old'].shape[0] + len(self.points)
+                                        self.points = np.delete(self.points, remove, axis=0)
+                                        new_elements[new_elements == replacement] = old
+                                    else:
+                                        self.points = np.delete(self.points, old, axis=0)
+                                        remove[remove > old] -= 1
+                                        new_elements[new_elements > old] -= 1
+                                        for G in groups:
+                                            new_points['old'][new_points['old'] > old] -= 1
+                                        self.interior_vertices[self.interior_vertices > old] -= 1
+                                        self.interface_vertices[self.interface_vertices > old] -= 1
+                                        self.boundary_vertices[self.boundary_vertices > old] -= 1
+                                        self.fixed_vertices[self.fixed_vertices > old] -= 1
+                                        for cell in self.cells:
+                                            cell.data[cell.data > old] -= 1
                                 accepted += 1
 
                 if len(new_elements) > 0:
@@ -1062,8 +1074,8 @@ class ModifiableMesh(meshio.Mesh):
         all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
         edges = np.unique(all_edges, axis=0)
 
-        boundary_or_interface = np.concatenate([self.boundary_vertices, self.interface_vertices])
-        includes_boundary = objects_boundary_includes_some(edges, 1, *boundary_or_interface)
+        boundary_or_interface = np.concatenate([self.fixed_vertices, self.boundary_vertices, self.interface_vertices])
+        includes_boundary = objects_boundary_includes_some(edges, 2, *boundary_or_interface)
         edges = edges[~includes_boundary]
 
         # edges = np.array([i for i in edges if  i not in self.interface_edges])
@@ -1073,27 +1085,45 @@ class ModifiableMesh(meshio.Mesh):
         edges = edges[np.argsort(length[short])]
 
         new_points = {}
+        replacements = {}
         not_accepted = []
         for edge in edges:
-            potential = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
+            if edge[0] in boundary_or_interface:
+                potential = objects_boundary_includes_some(self.get_triangles(), 1, edge[1])
+            elif edge[1] in boundary_or_interface:
+                potential = objects_boundary_includes_some(self.get_triangles(), 1, edge[0])
+            else:
+                potential = objects_boundary_includes_some(self.get_triangles(), 1, *edge)
             group = np.min(partition[potential])
             all_groups = np.unique(partition[potential])
             selected = np.isin(partition, all_groups)
 
             if np.all(np.isin(all_groups, list(new_points.keys()), invert=True)):
                 partition[selected] = group
-                new_points[group] = np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])
+                if edge[0] in boundary_or_interface:
+                    new_points[group] = dict(coords=self.points[edge[0]][None,:], old=edge[None,:])
+                elif edge[1] in boundary_or_interface:
+                    new_points[group] = dict(coords=self.points[edge[1]][None,:], old=edge[None,:])
+                else:
+                    new_points[group] = dict(coords=np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2]), old=edge[None,:])
             else:
                 try:
                     contour, _, interior = self.get_contour(selected)
                 except:
                     continue
                 interior = interior[np.isin(interior, edge, invert=True)]
-                nodes = [new_points[g] for g in all_groups if g in new_points]
+                nodes = [new_points[g]['coords'] for g in all_groups if g in new_points]
+                old_edges = [new_points[g]['old'] for g in all_groups if g in new_points]
                 new = sum([len(n) for n in nodes])
                 if len(contour) < 9 and len(interior) + new < len(contour) - 3:
                     partition[selected] = group
-                    new_points[group] = np.concatenate(nodes + [np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])], axis=0)
+                    if edge[0] in boundary_or_interface:
+                        new_point = self.points[edge[0]][None,:]
+                    elif edge[1] in boundary_or_interface:
+                        new_point = self.points[edge[1]][None,:]
+                    else:
+                        new_point = np.array([(self.points[edge[0]] + self.points[edge[1]]) / 2])
+                    new_points[group] = dict(coords=np.concatenate(nodes + [new_point], axis=0), old=np.concatenate(old_edges + [edge[None,:]], axis=0))
                     for g in all_groups:
                         if g != group and g in new_points:
                             del new_points[g]
