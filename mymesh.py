@@ -120,7 +120,7 @@ class ModifiableMesh(meshio.Mesh):
             return self.cells[self.tetra_index].data
 
     def set_tetras(self, tetras):
-        self.cells[self.tetra_index] = self.cells[self.tetra_index]._replace(data=tetra)
+        self.cells[self.tetra_index] = self.cells[self.tetra_index]._replace(data=tetras)
 
     def get_elements(self):
         if self.dimension == 3:
@@ -141,8 +141,8 @@ class ModifiableMesh(meshio.Mesh):
         # dim = len(self.cells) - 1
         if self.dimension == 2:
             quality = np.apply_along_axis(self.triangle_quality, 1, self.get_triangles())
-        elif self.dimension == 3:
-            quality = self.to_pyvista().quality
+        # elif self.dimension == 3:
+        #     quality = self.to_pyvista().quality
         else:
             raise DimensionError('Mesh must be a surface or volume mesh')
         return quality
@@ -485,7 +485,7 @@ class ModifiableMesh(meshio.Mesh):
         edge_quality = np.apply_along_axis(self.edge_quality, 1, edges, quality)
         edges = edges[np.argsort(edge_quality)]
 
-        not_accepted = []
+        # not_accepted = []
         for edge in edges:
             triangle_pair = self.find_triangles_with_common_edge(edge)
             group = np.min(partition[triangle_pair])
@@ -750,7 +750,7 @@ class ModifiableMesh(meshio.Mesh):
         edges = edges[np.argsort(-length[long])]
 
         new_points = {}
-        not_accepted = []
+        # not_accepted = []
         for edge in edges:
             triangle_pair = self.find_triangles_with_common_edge(edge)
             group = np.min(partition[triangle_pair])
@@ -869,7 +869,7 @@ class ModifiableMesh(meshio.Mesh):
                 if accept:
                     new_index = len(self.points)-1
                     self.boundary_vertices = np.append(self.boundary_vertices, [new_index], axis=0)
-                    new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
+                    # new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
 
                     keep_elements = np.logical_and(~old, keep_elements)
                     if len(new_elements) > 0:
@@ -916,7 +916,7 @@ class ModifiableMesh(meshio.Mesh):
                 if accept:
                     new_index = len(self.points)-1
                     self.interface_vertices = np.append(self.interface_vertices, [new_index], axis=0)
-                    new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
+                    # new_lines = np.append(self.get_lines(), np.array([[edge[0], new_index], [new_index, edge[1]]], dtype=np.int), axis=0)
 
                     keep_elements = np.logical_and(~old, keep_elements)
                     if len(new_elements) > 0:
@@ -981,7 +981,7 @@ class ModifiableMesh(meshio.Mesh):
         edges = edges[np.argsort(length[short])]
 
         new_points = {}
-        not_accepted = []
+        # not_accepted = []
         for edge in edges:
             # is_boundary_or_interface = np.isin(edge, boundary_or_interface)
             # if np.any(is_boundary_or_interface):
@@ -1063,6 +1063,59 @@ class ModifiableMesh(meshio.Mesh):
                         cell.data[cell.data == remove_vertex] = contract_to_vertex
                         cell.data[cell.data > remove_vertex] -= 1
 
+    def contract_edges(self, threshold):
+        elements = self.get_triangles()
+        all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
+        edges, counts = np.unique(all_edges, axis=0, return_counts=True)
+
+        is_interior = counts > 1
+        edges = edges[is_interior]
+
+        if len(self.interface_vertices > 0):
+            is_interface = objects_boundary_includes_some(edges, 2, *self.interface_vertices)
+            edges = edges[~is_interface]
+
+        length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
+        short = length < threshold
+        edges = edges[short]
+        edges = edges[np.argsort(length[short])]
+
+        for (vertex1, vertex2) in edges:
+            connectivity1 = np.count_nonzero(elements == vertex1)
+            connectivity2 = np.count_nonzero(elements == vertex2)
+            try:
+                if connectivity1 >= connectivity2:
+                    self.contract_edge(vertex2, vertex1)
+                    edges[edges > vertex1] -= 1
+                else:
+                    self.contract_edge(vertex1, vertex2)
+                    edges[edges > vertex2] -= 1
+            except:
+                pass
+    
+    def split_edges(self, threshold):
+        elements = self.get_triangles()
+        all_edges = [np.sort(np.roll(e, r)[:2]) for r in range(3) for e in elements]
+        edges, counts = np.unique(all_edges, axis=0, return_counts=True)
+
+        is_interior = counts > 1
+        edges = edges[is_interior]
+
+        if len(self.interface_vertices > 0):
+            is_interface = objects_boundary_includes_some(edges, 2, *self.interface_vertices)
+            edges = edges[~is_interface]
+
+        length = np.linalg.norm(self.points[edges[:,0]] - self.points[edges[:,1]], axis=1)
+        long = length > threshold
+        edges = edges[long]
+        edges = edges[np.argsort(-length[long])]
+
+        for (vertex1, vertex2) in edges:
+            try:
+                self.split_edge(vertex1, vertex2)                
+            except:
+                pass
+
     def translate_vertex(self, vertex, translation, check_injectivity=True, project_inwards=False):
         '''
         Translate vertex by translation. Optionally check whether elements remain injective after the translation (default True). Works for surface and volume meshes.
@@ -1117,6 +1170,7 @@ class ModifiableMesh(meshio.Mesh):
                         else:
                             raise ValueError('Mesh is no longer injective')
             self.points[vertex] = new_vertex
+
     def contract_edge(self, contract_to_vertex, remove_vertex):
         '''
         Contract an edge. The vertex that remains is contract_to_vertex. Works for surface and volume meshes.
@@ -1134,6 +1188,43 @@ class ModifiableMesh(meshio.Mesh):
         for cell in self.cells:
             cell.data[cell.data == remove_vertex] = contract_to_vertex # relabel end to start
             cell.data[cell.data > remove_vertex] -= 1 # account for removed vertex
+
+    def split_edge(self, vertex1, vertex2):
+        '''
+        Split an edge by inserting a nex vertex at the midpoint.
+        Currently doesn't preserve boundaries/interfaces.
+        '''
+        triangle_pair = self.find_triangles_with_common_edge([vertex1, vertex2])
+        triangle0 = self.get_triangles()[triangle_pair][0]
+        triangle1 = self.get_triangles()[triangle_pair][1]
+        while triangle0[0] != vertex1:
+            triangle0 = np.roll(triangle0, 1)
+        if triangle0[1] == vertex2:
+            other_vertex2 = triangle0[2]
+            while triangle1[0] != vertex1:
+                triangle1 = np.roll(triangle1, 1)
+            other_vertex1 = triangle1[1]
+        else:
+            other_vertex1 = triangle0[1]
+            while triangle1[0] != vertex1:
+                triangle1 = np.roll(triangle1, 1)
+            other_vertex2 = triangle1[2]
+
+        new_vertex = len(self.points)
+        new_triangles = np.array([
+            [vertex1, other_vertex1, new_vertex],
+            [vertex1, new_vertex, other_vertex2],
+            [vertex2, other_vertex2, new_vertex],
+            [vertex2, new_vertex, other_vertex1]
+        ], dtype=np.int64)
+        
+        new_point = np.mean(self.points[[vertex1, vertex2]], axis=0, keepdims=True)
+        self.points = np.append(self.points, new_point, axis=0)
+        
+        t0, t1 = np.nonzero(triangle_pair)[0]
+        triangles = np.delete(self.get_triangles(), [t0, t1], axis=0)
+        triangles = np.append(triangles, new_triangles, axis=0)
+        self.set_triangles(triangles)
 
     def swap_edge(self, vertex1, vertex2, check_angle=True):
         '''
@@ -1368,50 +1459,50 @@ class ModifiableMesh(meshio.Mesh):
             raise ValueError(error_msg.format(comma_list, edge[-2], edge[-1]))
         return objects
 
-    def to_pyvista(self):
-        """
-        Convert to a PyVista mesh.
-        """
-        # Extract cells from meshio.Mesh object
-        offset = []
-        cells = []
-        cell_type = []
-        cell_data = {}
-        next_offset = 0
-        # for cell in self.cells:
-        vtk_type = meshio.vtk._vtk.meshio_to_vtk_type[self.cells[-1].type]
-        numnodes = meshio.vtk._vtk.vtk_type_to_numnodes[vtk_type]
-        offset += [next_offset+i*(numnodes+1) for i in range(len(self.cells[-1].data))]
-        cells.append(np.hstack((np.full((len(self.cells[-1].data), 1), numnodes), self.cells[-1].data)).ravel())
-        cell_type += [vtk_type] * len(self.cells[-1].data)
-        next_offset = offset[-1] + numnodes + 1
+    # def to_pyvista(self):
+    #     """
+    #     Convert to a PyVista mesh.
+    #     """
+    #     # Extract cells from meshio.Mesh object
+    #     offset = []
+    #     cells = []
+    #     cell_type = []
+    #     cell_data = {}
+    #     next_offset = 0
+    #     # for cell in self.cells:
+    #     vtk_type = meshio.vtk._vtk.meshio_to_vtk_type[self.cells[-1].type]
+    #     numnodes = meshio.vtk._vtk.vtk_type_to_numnodes[vtk_type]
+    #     offset += [next_offset+i*(numnodes+1) for i in range(len(self.cells[-1].data))]
+    #     cells.append(np.hstack((np.full((len(self.cells[-1].data), 1), numnodes), self.cells[-1].data)).ravel())
+    #     cell_type += [vtk_type] * len(self.cells[-1].data)
+    #     next_offset = offset[-1] + numnodes + 1
 
-            # # Extract cell data
-            # if cell.type in self.cell_data.keys():
-            #     for kk, vv in self.cell_data[k].items():
-            #         if kk in cell_data:
-            #             cell_data[kk] = np.concatenate((cell_data[kk], np.array(vv, np.float64)))
-            #         else:
-            #             cell_data[kk] = np.array(vv, np.float64)
+    #         # # Extract cell data
+    #         # if cell.type in self.cell_data.keys():
+    #         #     for kk, vv in self.cell_data[k].items():
+    #         #         if kk in cell_data:
+    #         #             cell_data[kk] = np.concatenate((cell_data[kk], np.array(vv, np.float64)))
+    #         #         else:
+    #         #             cell_data[kk] = np.array(vv, np.float64)
 
-        # Create pyvista.UnstructuredGrid object
-        points = self.points
-        if points.shape[1] == 2:
-            points = np.hstack((points, np.zeros((len(points),1))))
+    #     # Create pyvista.UnstructuredGrid object
+    #     points = self.points
+    #     if points.shape[1] == 2:
+    #         points = np.hstack((points, np.zeros((len(points),1))))
 
-        grid = pyvista.UnstructuredGrid(
-            np.array(offset),
-            np.concatenate(cells),
-            np.array(cell_type),
-            np.array(points, np.float64),
-        )
+    #     grid = pyvista.UnstructuredGrid(
+    #         np.array(offset),
+    #         np.concatenate(cells),
+    #         np.array(cell_type),
+    #         np.array(points, np.float64),
+    #     )
 
-        # # Set point data
-        # grid.point_arrays.update({cell.type: np.array(v, np.float64) for cell.type, v in self.point_data.items()})
-        # # Set cell data
-        # grid.cell_arrays.update(cell_data)
+    #     # # Set point data
+    #     # grid.point_arrays.update({cell.type: np.array(v, np.float64) for cell.type, v in self.point_data.items()})
+    #     # # Set cell data
+    #     # grid.cell_arrays.update(cell_data)
 
-        return grid
+    #     return grid
 
 def objects_boundary_includes_some(objects, some=1, *args):
     return np.sum(np.array([objects_boundary_includes(objects, a) for a in args]), axis=0) >= some
